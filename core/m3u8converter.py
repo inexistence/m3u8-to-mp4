@@ -134,7 +134,7 @@ class M3U8StreamInfoParser:
         print('band_width =', self.band_width)
         print('resolution =', self.resolution)
 
-class M3U8Parser:
+class M3U8Converter:
     def __init__(self, m3u8_index_file_path: str):
         self.m3u8_index_file_path = m3u8_index_file_path
         self.dir = Path(m3u8_index_file_path).resolve().parent
@@ -142,7 +142,7 @@ class M3U8Parser:
     def print_stream_info(self):
         self.m3u8_stream_info_parser.print_stream_info()
 
-    def parse(self):
+    def convert(self):
         # parse m3u8 index for stream info
         m3u8_stream_info_parser = M3U8StreamInfoParser(self.m3u8_index_file_path)
         m3u8_stream_info_parser.parse()

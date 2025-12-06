@@ -1,9 +1,9 @@
-from core.m3u8parser import M3U8Parser
+from core.m3u8converter import M3U8Converter
 import argparse
 
 
 def main(index_file: str):
-    M3U8Parser(index_file).parse()
+    M3U8Converter(index_file).convert()
 
 if __name__ =='__main__':
     parser = argparse.ArgumentParser()
