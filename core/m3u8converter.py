@@ -40,12 +40,20 @@ class SimpleM3U8TsParser:
             self.index_file_path = index_file_path
         
         self.ts_merger = ts_merger
+        self.skip_first_part = False
+        self.current_part = 0
 
-    def __maybe_change_method(self, line: str):
+    def set_skip_first_part(self, skip: bool):
+        self.skip_first_part = skip
+
+    def __maybe_change_part(self, line: str):
         if line == KEY_DISCONTINUITY:
+            self.current_part = self.current_part+1
             # reset decryption
             self.decryption = TsDecrypt()
             return
+
+    def __maybe_change_method(self, line: str):
         if not line.startswith(KEY_DECRYPT_KEY):
             return
         entry = parse_key_value(line, KEY_DECRYPT_KEY)
@@ -77,15 +85,23 @@ class SimpleM3U8TsParser:
         if line is None:
             return
 
+        if self.skip_first_part == True and self.current_part == 0:
+            cur_part_tmp = self.current_part
+            self.__maybe_change_part(line)
+            if self.current_part != cur_part_tmp:
+                print('part 0 is skipped')
+            return
         self.__maybe_change_method(line)
         self.__decrypt_and_merge_ts(line)
-        
+        self.__maybe_change_part(line)
 
     def merge(self):
         # 写入二进制文件
-        self.ts_merger.start()
-        file.read_lines(self.index_file_path, self.__handle_line)
-        self.ts_merger.finish()
+        try:
+            self.ts_merger.start()
+            file.read_lines(self.index_file_path, self.__handle_line)
+        finally:
+            self.ts_merger.finish()
 
 
 class M3U8StreamInfoParser:
@@ -138,6 +154,10 @@ class M3U8Converter:
     def __init__(self, m3u8_index_file_path: str):
         self.m3u8_index_file_path = m3u8_index_file_path
         self.dir = Path(m3u8_index_file_path).resolve().parent
+        self.skip_first_part = False
+
+    def set_skip_first_part(self, skip: bool):
+        self.skip_first_part = skip
         
     def print_stream_info(self):
         self.m3u8_stream_info_parser.print_stream_info()
@@ -151,6 +171,7 @@ class M3U8Converter:
         # parse m3u8 index2 for ts info
         merger = FfmpegMerger(self.dir / 'output.mp4')
         ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger)
+        ts_parser.set_skip_first_part(self.skip_first_part)
         ts_parser.merge()
         print('end')
 
