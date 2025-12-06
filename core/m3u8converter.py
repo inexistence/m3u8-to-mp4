@@ -105,8 +105,11 @@ class SimpleM3U8TsParser:
 
 
 class M3U8StreamInfoParser:
-    def __init__(self, m3u8_index_file_path: str):
-        self.m3u8_index_file_path = Path(m3u8_index_file_path)
+    def __init__(self, m3u8_index_file_path: str|Path):
+        if isinstance(m3u8_index_file_path, Path):
+            self.m3u8_index_file_path = m3u8_index_file_path
+        else:
+            self.m3u8_index_file_path = Path(m3u8_index_file_path)
         self.m3u8_ts_info_file = None
         self.program_id=0
         self.band_width=0
@@ -151,9 +154,9 @@ class M3U8StreamInfoParser:
         print('resolution =', self.resolution)
 
 class M3U8Converter:
-    def __init__(self, m3u8_index_file_path: str):
-        self.m3u8_index_file_path = m3u8_index_file_path
-        self.dir = Path(m3u8_index_file_path).resolve().parent
+    def __init__(self, m3u8_index_file_path: str|Path):
+        self.m3u8_index_file_path: Path = Path(m3u8_index_file_path) if not isinstance(m3u8_index_file_path, Path) else m3u8_index_file_path
+        self.dir: Path = Path(m3u8_index_file_path).resolve().parent
         self.skip_first_part = False
 
     def set_skip_first_part(self, skip: bool):

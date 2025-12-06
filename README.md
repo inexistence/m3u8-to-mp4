@@ -27,10 +27,10 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 pip install -r requirements.txt
 ```
 
-执行任务，文件路径设为最外层的 m3u8 文件路径，最终结果将生成在 index.m3u8 所在文件夹下
+执行任务，文件路径设为 index.m3u8 文件或包含该文件的文件夹路径，最终结果将生成在 index.m3u8 所在文件夹下
 
 ```shell
-python .\main.py 'file path'
+python .\main.py 'index.m3u8 file or directory path'
 ```
 
 保存依赖
