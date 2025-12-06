@@ -40,5 +40,6 @@ pip freeze > requirements.txt
 ```
 
 ### 依赖库
-ffmpeg-python：用于ts视频合并
-pycryptodome：用于解密
+
+- ffmpeg-python：用于ts视频合并
+- pycryptodome：用于解密
