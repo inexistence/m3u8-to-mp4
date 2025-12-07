@@ -7,6 +7,7 @@ from core.decrypt.ts_decrypt_aes_128 import TsDecrypt_AES128_CBC
 from core.merge.ts_merge import TsMerger
 from core.merge.simple_merge import SimpleMerger
 from core.merge.ffmpeg_merge import FfmpegMerger
+from core.utils.config import GlobalConfig
 
 KEY_EXT_X_STREAM_INF = '#EXT-X-STREAM-INF:'
 KEY_PROGRAM_ID='PROGRAM-ID'
@@ -154,28 +155,32 @@ class M3U8StreamInfoParser:
         print('resolution =', self.resolution)
 
 class M3U8Converter:
-    def __init__(self, m3u8_index_file_path: str|Path):
+    def __init__(self, m3u8_index_file_path: str|Path, config: GlobalConfig):
         self.m3u8_index_file_path: Path = Path(m3u8_index_file_path) if not isinstance(m3u8_index_file_path, Path) else m3u8_index_file_path
         self.dir: Path = Path(m3u8_index_file_path).resolve().parent
-        self.skip_first_part = False
-
-    def set_skip_first_part(self, skip: bool):
-        self.skip_first_part = skip
+        self.config = config
+        self.m3u8_stream_info_parser = M3U8StreamInfoParser(self.m3u8_index_file_path)
         
     def print_stream_info(self):
         self.m3u8_stream_info_parser.print_stream_info()
 
     def convert(self):
         # parse m3u8 index for stream info
-        m3u8_stream_info_parser = M3U8StreamInfoParser(self.m3u8_index_file_path)
-        m3u8_stream_info_parser.parse()
-        ts_infos_index_file_path = m3u8_stream_info_parser.m3u8_ts_info_file
+        self.m3u8_stream_info_parser.parse()
+        ts_infos_index_file_path = self.m3u8_stream_info_parser.m3u8_ts_info_file
 
         # parse m3u8 index2 for ts info
-        merger = FfmpegMerger(self.dir / 'output.mp4')
+        out_put_file_name = self.config.output_file_name
+        if out_put_file_name == '__DIR_NAME__':
+            out_put_file_name = self.dir.name
+
+        if not out_put_file_name.endswith('.mp4'):
+            out_put_file_name = out_put_file_name + '.mp4'
+
+        merger = FfmpegMerger(self.dir / out_put_file_name)
         ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger)
-        ts_parser.set_skip_first_part(self.skip_first_part)
+        ts_parser.set_skip_first_part(self.config.skip_first_part)
         ts_parser.merge()
-        print('end')
+        print('convert end')
 
         

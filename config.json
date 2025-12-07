@@ -1,3 +1,4 @@
 {
-    "skip_first_part": false
+    "skip_first_part": false,
+    "output_file_name": "output.mp4"
 }

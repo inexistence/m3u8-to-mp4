@@ -6,8 +6,7 @@ from pathlib import Path
 
 def handle_file(index_file_path: str|Path, config: GlobalConfig):
     print('start convert', index_file_path)
-    converter = M3U8Converter(index_file_path)
-    converter.set_skip_first_part(config.skip_first_part)
+    converter = M3U8Converter(m3u8_index_file_path=index_file_path, config=config)
     converter.convert()
 
 def search_indexs(directory: Path) -> list[Path]:
