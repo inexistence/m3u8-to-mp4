@@ -18,6 +18,7 @@ KEY_DISCONTINUITY='#EXT-X-DISCONTINUITY'
 KEY_DECRYPT_KEY='#EXT-X-KEY:'
 KEY_METHOD='METHOD'
 KEY_URI='URI'
+KEY_IV='IV'
 
 def parse_key_value(content: str, header: str) -> dict:
     key_value_str = content.split(header)[1]
@@ -60,11 +61,12 @@ class SimpleM3U8TsParser:
         entry = parse_key_value(line, KEY_DECRYPT_KEY)
         method = entry[KEY_METHOD] if KEY_METHOD in entry else None
         uri = entry[KEY_URI] if KEY_URI in entry else None
+        iv = entry[KEY_IV] if KEY_IV in entry else None
         if method is not None and uri is not None:
             uri = uri.strip('"')
             key_path = self.index_file_path.resolve().parent / Path(uri)
             key = file.read(key_path)
-            self.decryption = get_decryption(method, key)
+            self.decryption = get_decryption(method, key, iv)
         else:
             self.decryption = TsDecrypt()
 
@@ -97,6 +99,10 @@ class SimpleM3U8TsParser:
         self.__maybe_change_part(line)
 
     def merge(self):
+        if self.skip_first_part == True:
+            # if no KEY_DISCONTINUITY, can not skip first part
+            self.skip_first_part = KEY_DISCONTINUITY in file.read(self.index_file_path)
+
         # 写入二进制文件
         try:
             self.ts_merger.start()
@@ -168,6 +174,10 @@ class M3U8Converter:
         # parse m3u8 index for stream info
         self.m3u8_stream_info_parser.parse()
         ts_infos_index_file_path = self.m3u8_stream_info_parser.m3u8_ts_info_file
+
+        # can not found ts info index, try stream info index
+        if ts_infos_index_file_path is None:
+            ts_infos_index_file_path = self.m3u8_stream_info_parser.m3u8_index_file_path
 
         # parse m3u8 index2 for ts info
         out_put_file_name = self.config.output_file_name
