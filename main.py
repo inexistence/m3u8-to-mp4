@@ -10,15 +10,7 @@ def handle_file(index_file_path: str|Path, config: GlobalConfig):
     converter.convert()
 
 def search_indexs(directory: Path) -> list[Path]:
-    index_path_list = []
-    for entry in directory.iterdir():
-        if entry.is_file() and entry.name.endswith('.m3u8'):
-            index_path_list.append(entry)
-            return index_path_list
-        elif entry.is_dir():
-            indexes_in_sub_directories = search_indexs(entry)
-            index_path_list += indexes_in_sub_directories
-    return index_path_list
+    return sorted(directory.rglob('*.m3u8'))
 
 
 def main(path_name: Path):
@@ -28,6 +20,10 @@ def main(path_name: Path):
         handle_file(index_file_path=path_name, config=config)
     elif os.path.isdir(path_name):
         index_files = search_indexs(path_name)
+        if not index_files:
+            print('no .m3u8 files found in', path_name)
+            return
+        print(f'found {len(index_files)} .m3u8 file(s)')
         # TODO multi thread
         for file in index_files:
             handle_file(index_file_path=file, config=config)
