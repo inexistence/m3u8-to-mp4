@@ -8,6 +8,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 from core.utils.config import GlobalConfig, save_local_config
+from gui import theme as t
 
 OUTPUT_DIR_NAME = '__DIR_NAME__'
 OUTPUT_FIXED = 'output.mp4'
@@ -20,13 +21,6 @@ AES_IV_OPTIONS = {
 AES_IV_LABELS = {value: label for label, value in AES_IV_OPTIONS.items()}
 
 
-def _dialog_bg_color() -> str:
-    fg_color = ctk.ThemeManager.theme['CTkFrame']['fg_color']
-    if isinstance(fg_color, (tuple, list)):
-        return fg_color[1] if ctk.get_appearance_mode() == 'Dark' else fg_color[0]
-    return fg_color
-
-
 class SettingsDialog(tk.Toplevel):
     """使用 tk.Toplevel 而非 CTkToplevel，避免 Windows 下主窗口变透明。"""
 
@@ -36,14 +30,14 @@ class SettingsDialog(tk.Toplevel):
         self.on_saved = on_saved
 
         self.title('转换设置')
-        self.geometry('520x480')
+        self.geometry('540x520')
         self.resizable(False, False)
         self.transient(master)
-        self.configure(bg=_dialog_bg_color())
+        self.configure(bg=t.frame_bg())
         self.protocol('WM_DELETE_WINDOW', self._close)
 
-        self.container = ctk.CTkFrame(self)
-        self.container.pack(fill='both', expand=True)
+        self.container = t.style_card(ctk.CTkFrame(self))
+        self.container.pack(fill='both', expand=True, padx=t.SPACE_LG, pady=t.SPACE_LG)
 
         self._build_ui()
         self._load_values()
@@ -69,57 +63,73 @@ class SettingsDialog(tk.Toplevel):
         self.destroy()
 
     def _build_ui(self) -> None:
-        body = ctk.CTkScrollableFrame(self.container)
-        body.pack(fill='both', expand=True, padx=16, pady=(16, 8))
+        header = ctk.CTkFrame(self.container, fg_color='transparent')
+        header.pack(fill='x', padx=t.SPACE_LG, pady=(t.SPACE_LG, t.SPACE_SM))
 
-        self._add_section_title(body, '输出文件名')
+        ctk.CTkLabel(header, text='转换设置', font=t.font_title()).pack(anchor='w')
+        ctk.CTkLabel(
+            header,
+            text='以下设置保存后，下次转换时生效',
+            font=t.font_caption(),
+            text_color=t.MUTED,
+        ).pack(anchor='w', pady=(2, 0))
+
+        body = ctk.CTkScrollableFrame(self.container, fg_color='transparent')
+        body.pack(fill='both', expand=True, padx=t.SPACE_LG, pady=t.SPACE_SM)
+
+        self._add_section(body, '输出文件名')
         self.output_mode = tk.StringVar(value='dir_name')
-        ctk.CTkRadioButton(
-            body,
-            text='使用 m3u8 所在文件夹名（推荐）',
-            variable=self.output_mode,
-            value='dir_name',
-            command=self._update_output_mode,
-        ).pack(anchor='w', pady=2)
-        ctk.CTkRadioButton(
-            body,
-            text='固定为 output.mp4',
-            variable=self.output_mode,
-            value='fixed',
-            command=self._update_output_mode,
-        ).pack(anchor='w', pady=2)
-        ctk.CTkRadioButton(
-            body,
-            text='自定义文件名',
-            variable=self.output_mode,
-            value='custom',
-            command=self._update_output_mode,
-        ).pack(anchor='w', pady=2)
+        for text, value in (
+            ('使用 m3u8 所在文件夹名（推荐）', 'dir_name'),
+            ('固定为 output.mp4', 'fixed'),
+            ('自定义文件名', 'custom'),
+        ):
+            ctk.CTkRadioButton(
+                body,
+                text=text,
+                variable=self.output_mode,
+                value=value,
+                command=self._update_output_mode,
+                font=t.font_body(),
+            ).pack(anchor='w', pady=3)
 
-        self.custom_name_entry = ctk.CTkEntry(body, placeholder_text='例如：my_video.mp4')
-        self.custom_name_entry.pack(fill='x', pady=(4, 0))
+        self.custom_name_entry = ctk.CTkEntry(
+            body,
+            placeholder_text='例如：my_video.mp4',
+            height=32,
+            font=t.font_body(),
+        )
+        self.custom_name_entry.pack(fill='x', pady=(t.SPACE_XS, 0))
 
-        self._add_section_title(body, 'AES-128 分片 IV 模式', top=16)
-        self.aes_iv_menu = ctk.CTkOptionMenu(body, values=list(AES_IV_OPTIONS.keys()))
-        self.aes_iv_menu.pack(fill='x', pady=(4, 0))
+        self._add_section(body, 'AES-128 分片 IV 模式')
+        self.aes_iv_menu = ctk.CTkOptionMenu(
+            body,
+            values=list(AES_IV_OPTIONS.keys()),
+            height=32,
+            font=t.font_body(),
+        )
+        self.aes_iv_menu.pack(fill='x', pady=(t.SPACE_XS, 0))
         ctk.CTkLabel(
             body,
             text='加密视频转换失败时可尝试切换此选项',
-            text_color='gray',
+            font=t.font_caption(),
+            text_color=t.MUTED,
             anchor='w',
-        ).pack(fill='x', pady=(4, 0))
+        ).pack(fill='x', pady=(t.SPACE_XS, 0))
 
-        self._add_section_title(body, '分段处理', top=16)
+        self._add_section(body, '分段处理')
         self.skip_first_part_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             body,
             text='跳过分段前第一段内容',
             variable=self.skip_first_part_var,
-        ).pack(anchor='w', pady=2)
+            font=t.font_body(),
+        ).pack(anchor='w', pady=3)
         ctk.CTkLabel(
             body,
             text='仅在 m3u8 含 #EXT-X-DISCONTINUITY 时生效',
-            text_color='gray',
+            font=t.font_caption(),
+            text_color=t.MUTED,
             anchor='w',
         ).pack(fill='x')
 
@@ -128,21 +138,25 @@ class SettingsDialog(tk.Toplevel):
             body,
             text='分段切换时重置解密器',
             variable=self.reset_decrypt_var,
-        ).pack(anchor='w', pady=(8, 2))
+            font=t.font_body(),
+        ).pack(anchor='w', pady=(t.SPACE_SM, 3))
 
         footer = ctk.CTkFrame(self.container, fg_color='transparent')
-        footer.pack(fill='x', padx=16, pady=(0, 16))
+        footer.pack(fill='x', padx=t.SPACE_LG, pady=(t.SPACE_SM, t.SPACE_LG))
 
-        ctk.CTkButton(footer, text='取消', width=90, fg_color='gray', command=self._close).pack(side='right')
-        ctk.CTkButton(footer, text='保存', width=90, command=self._save).pack(side='right', padx=(0, 8))
+        t.style_secondary_button(
+            ctk.CTkButton(footer, text='取消', command=self._close),
+            width=90,
+        ).pack(side='right')
 
-    def _add_section_title(self, parent, text: str, top: int = 0) -> None:
-        ctk.CTkLabel(
-            parent,
-            text=text,
-            font=ctk.CTkFont(size=14, weight='bold'),
-            anchor='w',
-        ).pack(fill='x', pady=(top, 4))
+        t.style_primary_button(
+            ctk.CTkButton(footer, text='保存', command=self._save),
+            width=90,
+        ).pack(side='right', padx=(0, t.SPACE_SM))
+
+    def _add_section(self, parent, text: str) -> None:
+        ctk.CTkFrame(parent, height=1, fg_color=t.SECONDARY).pack(fill='x', pady=(t.SPACE_LG, t.SPACE_SM))
+        t.style_section_label(ctk.CTkLabel(parent, text=text), text).pack(fill='x', pady=(0, t.SPACE_SM))
 
     def _load_values(self) -> None:
         output_name = self.global_config.output_file_name

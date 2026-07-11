@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
-datas = [('config.yaml', '.')]
+datas = [('config.yaml', '.'), ('gui/theme.json', 'gui')]
 datas += collect_data_files('customtkinter')
 
 hiddenimports = collect_submodules('tkinterdnd2')

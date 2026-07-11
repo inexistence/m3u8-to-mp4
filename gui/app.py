@@ -10,6 +10,7 @@ from tkinterdnd2 import TkinterDnD
 from core.discovery import M3u8Entry, find_entry_m3u8_from_paths
 from core.utils.config import get_global_config
 from core.utils.ffmpeg_check import find_ffmpeg, ffmpeg_missing_message
+from gui import theme as t
 from gui.settings_dialog import SettingsDialog
 from gui.drop_zone import DropZone
 from gui.models import ConversionTask, TaskStatus
@@ -20,12 +21,11 @@ from gui.worker import ConversionWorker, WorkerEvent
 class M3u8GuiApp(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-        ctk.set_appearance_mode('System')
-        ctk.set_default_color_theme('blue')
+        t.init_theme()
 
-        self.title('m3u8 → mp4 转换工具')
-        self.geometry('860x640')
-        self.minsize(720, 520)
+        self.title('m3u8 → mp4')
+        self.geometry('900x700')
+        self.minsize(760, 560)
 
         self.global_config = get_global_config()
         self.tasks: list[ConversionTask] = []
@@ -43,80 +43,138 @@ class M3u8GuiApp(TkinterDnD.Tk):
             messagebox.showwarning('缺少 FFmpeg', ffmpeg_missing_message(), parent=self)
 
     def _apply_root_background(self) -> None:
-        fg_color = ctk.ThemeManager.theme['CTkFrame']['fg_color']
-        if isinstance(fg_color, (tuple, list)):
-            bg = fg_color[1] if ctk.get_appearance_mode() == 'Dark' else fg_color[0]
-        else:
-            bg = fg_color
-        self.configure(bg=bg)
+        self.configure(bg=t.frame_bg())
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        header_row = ctk.CTkFrame(self, fg_color='transparent')
-        header_row.grid(row=0, column=0, sticky='ew', padx=16, pady=(16, 8))
-        header_row.grid_columnconfigure(0, weight=1)
+        self._build_header()
+        self._build_body()
+        self._build_footer()
 
-        header = ctk.CTkLabel(
-            header_row,
-            text='m3u8 → mp4 转换工具',
-            font=ctk.CTkFont(size=20, weight='bold'),
+    def _build_header(self) -> None:
+        header = ctk.CTkFrame(self, fg_color='transparent')
+        header.grid(row=0, column=0, sticky='ew', padx=t.SPACE_LG, pady=(t.SPACE_LG, t.SPACE_SM))
+        header.grid_columnconfigure(1, weight=1)
+
+        accent_bar = ctk.CTkFrame(header, width=4, height=40, corner_radius=2, fg_color=t.ACCENT)
+        accent_bar.grid(row=0, column=0, rowspan=2, sticky='ns', padx=(0, t.SPACE_MD))
+
+        title_block = ctk.CTkFrame(header, fg_color='transparent')
+        title_block.grid(row=0, column=1, sticky='w')
+
+        ctk.CTkLabel(
+            title_block,
+            text='m3u8 → mp4',
+            font=t.font_title(),
+        ).pack(anchor='w')
+
+        ctk.CTkLabel(
+            title_block,
+            text='本地 HLS 分片合并为 MP4',
+            font=t.font_subtitle(),
+            text_color=t.MUTED,
+        ).pack(anchor='w', pady=(2, 0))
+
+        self.settings_btn = t.style_secondary_button(
+            ctk.CTkButton(header, text='⚙  设置', command=self.open_settings),
+            width=96,
         )
-        header.grid(row=0, column=0, sticky='w')
+        self.settings_btn.grid(row=0, column=2, rowspan=2, sticky='e')
 
-        self.settings_btn = ctk.CTkButton(
-            header_row,
-            text='设置',
-            width=80,
-            command=self.open_settings,
-        )
-        self.settings_btn.grid(row=0, column=1, sticky='e')
-
-        body = ctk.CTkFrame(self)
-        body.grid(row=1, column=0, sticky='nsew', padx=16, pady=8)
+    def _build_body(self) -> None:
+        body = ctk.CTkFrame(self, fg_color='transparent')
+        body.grid(row=1, column=0, sticky='nsew', padx=t.SPACE_LG, pady=t.SPACE_SM)
         body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(1, weight=1)
+        body.grid_rowconfigure(2, weight=1)
 
-        self.drop_zone = DropZone(body, on_paths_dropped=self.add_paths, height=120)
-        self.drop_zone.grid(row=0, column=0, sticky='ew', padx=8, pady=8)
+        t.style_section_label(
+            ctk.CTkLabel(body, text='导入'),
+            '导入',
+        ).grid(row=0, column=0, sticky='w', pady=(0, t.SPACE_SM))
 
-        self.task_list = TaskList(body, on_selection_changed=self._update_convert_button)
-        self.task_list.grid(row=1, column=0, sticky='nsew', padx=8, pady=8)
+        self.drop_zone = DropZone(body, on_paths_dropped=self.add_paths, height=140)
+        self.drop_zone.grid(row=1, column=0, sticky='ew', pady=(0, t.SPACE_LG))
 
+        queue_header = ctk.CTkFrame(body, fg_color='transparent')
+        queue_header.grid(row=2, column=0, sticky='new', pady=(0, t.SPACE_SM))
+        queue_header.grid_columnconfigure(0, weight=1)
+
+        t.style_section_label(
+            ctk.CTkLabel(queue_header, text='任务队列'),
+            '任务队列',
+        ).grid(row=0, column=0, sticky='w')
+
+        queue_card = t.style_card(ctk.CTkFrame(body))
+        queue_card.grid(row=3, column=0, sticky='nsew')
+        queue_card.grid_columnconfigure(0, weight=1)
+        queue_card.grid_rowconfigure(0, weight=1)
+        body.grid_rowconfigure(3, weight=1)
+
+        self.task_list = TaskList(queue_card, on_selection_changed=self._update_convert_button)
+        self.task_list.grid(row=0, column=0, sticky='nsew', padx=t.SPACE_MD, pady=t.SPACE_MD)
+
+    def _build_footer(self) -> None:
         footer = ctk.CTkFrame(self, fg_color='transparent')
-        footer.grid(row=2, column=0, sticky='ew', padx=16, pady=(0, 16))
+        footer.grid(row=2, column=0, sticky='ew', padx=t.SPACE_LG, pady=(t.SPACE_SM, t.SPACE_LG))
         footer.grid_columnconfigure(0, weight=1)
 
-        self.progress_label = ctk.CTkLabel(footer, text='', text_color='gray')
-        self.progress_label.grid(row=0, column=0, sticky='w', pady=(0, 4))
+        progress_row = ctk.CTkFrame(footer, fg_color='transparent')
+        progress_row.grid(row=0, column=0, sticky='ew', pady=(0, t.SPACE_SM))
+        progress_row.grid_columnconfigure(0, weight=1)
 
-        self.progress = ctk.CTkProgressBar(footer)
-        self.progress.grid(row=1, column=0, sticky='ew', pady=(0, 8))
+        self.progress_label = ctk.CTkLabel(
+            progress_row,
+            text='',
+            font=t.font_caption(),
+            text_color=t.MUTED,
+            anchor='w',
+        )
+        self.progress_label.grid(row=0, column=0, sticky='w', pady=(0, t.SPACE_XS))
+
+        self.progress = ctk.CTkProgressBar(progress_row, height=8, corner_radius=4)
+        self.progress.grid(row=1, column=0, sticky='ew')
         self.progress.set(0)
 
         actions = ctk.CTkFrame(footer, fg_color='transparent')
-        actions.grid(row=2, column=0, sticky='ew', pady=(0, 8))
+        actions.grid(row=1, column=0, sticky='ew', pady=(t.SPACE_MD, t.SPACE_MD))
         actions.grid_columnconfigure(0, weight=1)
 
-        self.convert_btn = ctk.CTkButton(actions, text='开始转换', width=140, command=self.start_conversion)
+        self.convert_btn = t.style_primary_button(
+            ctk.CTkButton(actions, text='开始转换', command=self.start_conversion),
+            width=140,
+        )
         self.convert_btn.pack(side='right')
 
-        self.cancel_btn = ctk.CTkButton(
-            actions,
-            text='取消',
+        self.cancel_btn = t.style_danger_button(
+            ctk.CTkButton(actions, text='取消', command=self.cancel_conversion, state='disabled'),
             width=100,
-            fg_color='#c0392b',
-            hover_color='#a93226',
-            command=self.cancel_conversion,
-            state='disabled',
         )
-        self.cancel_btn.pack(side='right', padx=(0, 8))
+        self.cancel_btn.pack(side='right', padx=(0, t.SPACE_SM))
 
-        self.clear_btn = ctk.CTkButton(actions, text='清空列表', width=100, fg_color='gray', command=self.clear_tasks)
-        self.clear_btn.pack(side='right', padx=(0, 8))
+        self.clear_btn = t.style_secondary_button(
+            ctk.CTkButton(actions, text='清空列表', command=self.clear_tasks),
+            width=100,
+        )
+        self.clear_btn.pack(side='right', padx=(0, t.SPACE_SM))
 
-        self.log_box = ctk.CTkTextbox(footer, height=120)
+        log_header = ctk.CTkFrame(footer, fg_color='transparent')
+        log_header.grid(row=2, column=0, sticky='ew', pady=(0, t.SPACE_XS))
+
+        t.style_section_label(
+            ctk.CTkLabel(log_header, text='运行日志'),
+            '运行日志',
+        ).pack(side='left')
+
+        self.log_box = ctk.CTkTextbox(
+            footer,
+            height=110,
+            font=t.font_mono(),
+            fg_color=t.LOG_BG,
+            text_color=t.LOG_FG,
+            corner_radius=t.RADIUS_SM,
+        )
         self.log_box.grid(row=3, column=0, sticky='ew')
         self.log_box.configure(state='disabled')
 
