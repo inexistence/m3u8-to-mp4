@@ -43,17 +43,20 @@ class SimpleM3U8TsParser:
         
         self.ts_merger = ts_merger
         self.skip_first_part = False
+        self.reset_decryption_if_part_changed = True
         self.current_part = 0
 
     def set_skip_first_part(self, skip: bool):
         self.skip_first_part = skip
 
+    def set_reset_decryption_if_part_changed(self, reset: bool):
+        self.reset_decryption_if_part_changed = reset
+
     def __maybe_change_part(self, line: str):
         if line == KEY_DISCONTINUITY:
             self.current_part = self.current_part+1
-            # 切换标签以后要不要重置解密器
-            # reset decryption
-            # self.decryption = TsDecrypt()
+            if self.reset_decryption_if_part_changed:
+                self.decryption = TsDecrypt()
             return
 
     def __maybe_change_method(self, line: str):
@@ -191,6 +194,7 @@ class M3U8Converter:
         merger = FfmpegMerger(self.dir / out_put_file_name)
         ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger)
         ts_parser.set_skip_first_part(self.config.skip_first_part)
+        ts_parser.set_reset_decryption_if_part_changed(self.config.reset_decryption_if_part_changed)
         ts_parser.merge()
         print('convert end')
 

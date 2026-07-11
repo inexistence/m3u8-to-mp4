@@ -1,0 +1,10 @@
+# 是否跳过 m3u8 的第一段内容（part 0）
+# 仅在索引文件包含 #EXT-X-DISCONTINUITY 标签时生效
+skip_first_part: false
+
+# 输出 MP4 文件名
+# 可使用 __DIR_NAME__ 表示使用 index.m3u8 所在文件夹名作为文件名
+output_file_name: __DIR_NAME__
+
+# 遇到 #EXT-X-DISCONTINUITY 切换分段时，是否重置解密器
+reset_decryption_if_part_changed: true
