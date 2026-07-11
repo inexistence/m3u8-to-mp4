@@ -73,12 +73,20 @@ class SimpleM3U8TsParser:
         if hasattr(self.decryption, 'reset_detect_mode'):
             self.decryption.reset_detect_mode()
 
+    def __sync_decryptor_key_start(self):
+        """将解密器的 key 起始序号与当前 media/segment 序号对齐。"""
+        if not hasattr(self.decryption, 'set_key_start_sequence'):
+            return
+        sequence = self.segment_sequence if self.segment_sequence is not None else self.media_sequence
+        self.decryption.set_key_start_sequence(sequence)
+
     def __maybe_read_media_sequence(self, line: str):
         if not line.startswith(KEY_MEDIA_SEQUENCE):
             return
         self.media_sequence = safe_int(line.split(':', 1)[1])
         if self.segment_sequence is None:
             self.segment_sequence = self.media_sequence
+        self.__sync_decryptor_key_start()
 
     def __maybe_change_method(self, line: str):
         if not line.startswith(KEY_DECRYPT_KEY):
@@ -94,10 +102,7 @@ class SimpleM3U8TsParser:
                 key = file.read(key_path)
                 self.decryption = get_decryption(method, key, iv, iv_mode=self.aes_iv_mode)
                 self._current_key_uri = uri
-                if hasattr(self.decryption, 'set_key_start_sequence'):
-                    if self.segment_sequence is None:
-                        self.segment_sequence = self.media_sequence
-                    self.decryption.set_key_start_sequence(self.segment_sequence)
+                self.__sync_decryptor_key_start()
         else:
             self.decryption = TsDecrypt()
             self._current_key_uri = None
@@ -119,6 +124,7 @@ class SimpleM3U8TsParser:
             data = self.decryption.decrypt(raw)
 
         if data is None:
+            print(f'warning: decrypt returned None, skipping segment {line} (sequence={self.segment_sequence})')
             return
 
         self.segment_sequence += 1

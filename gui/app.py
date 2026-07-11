@@ -9,6 +9,7 @@ from tkinterdnd2 import TkinterDnD
 
 from core.discovery import M3u8Entry, find_entry_m3u8_from_paths
 from core.utils.config import get_global_config
+from core.utils.ffmpeg_check import find_ffmpeg, ffmpeg_missing_message
 from gui.settings_dialog import SettingsDialog
 from gui.drop_zone import DropZone
 from gui.models import ConversionTask, TaskStatus
@@ -30,10 +31,16 @@ class M3u8GuiApp(TkinterDnD.Tk):
         self.tasks: list[ConversionTask] = []
         self.worker: ConversionWorker | None = None
         self.is_converting = False
+        self._cancel_requested = False
         self._settings_dialog: SettingsDialog | None = None
 
         self._apply_root_background()
         self._build_ui()
+        self.after(200, self._warn_if_ffmpeg_missing)
+
+    def _warn_if_ffmpeg_missing(self) -> None:
+        if find_ffmpeg() is None:
+            messagebox.showwarning('缺少 FFmpeg', ffmpeg_missing_message(), parent=self)
 
     def _apply_root_background(self) -> None:
         fg_color = ctk.ThemeManager.theme['CTkFrame']['fg_color']
@@ -94,6 +101,17 @@ class M3u8GuiApp(TkinterDnD.Tk):
 
         self.convert_btn = ctk.CTkButton(actions, text='开始转换', width=140, command=self.start_conversion)
         self.convert_btn.pack(side='right')
+
+        self.cancel_btn = ctk.CTkButton(
+            actions,
+            text='取消',
+            width=100,
+            fg_color='#c0392b',
+            hover_color='#a93226',
+            command=self.cancel_conversion,
+            state='disabled',
+        )
+        self.cancel_btn.pack(side='right', padx=(0, 8))
 
         self.clear_btn = ctk.CTkButton(actions, text='清空列表', width=100, fg_color='gray', command=self.clear_tasks)
         self.clear_btn.pack(side='right', padx=(0, 8))
@@ -158,6 +176,9 @@ class M3u8GuiApp(TkinterDnD.Tk):
     def start_conversion(self) -> None:
         if self.is_converting:
             return
+        if find_ffmpeg() is None:
+            messagebox.showerror('缺少 FFmpeg', ffmpeg_missing_message(), parent=self)
+            return
         selected_tasks = [task for task in self.tasks if task.selected]
         if not selected_tasks:
             messagebox.showinfo('提示', '请至少选择一个文件')
@@ -173,7 +194,9 @@ class M3u8GuiApp(TkinterDnD.Tk):
         self._append_log(f'输出文件名配置: {self.global_config.output_file_name}')
 
         self.is_converting = True
+        self._cancel_requested = False
         self.convert_btn.configure(state='disabled', text='转换中…')
+        self.cancel_btn.configure(state='normal')
         self.clear_btn.configure(state='disabled')
         self.settings_btn.configure(state='disabled')
         self.task_list.set_interactive(False)
@@ -183,6 +206,14 @@ class M3u8GuiApp(TkinterDnD.Tk):
 
         self.worker = ConversionWorker(self.tasks, self.global_config, self._on_worker_event)
         self.worker.start()
+
+    def cancel_conversion(self) -> None:
+        if not self.is_converting or self.worker is None:
+            return
+        self._cancel_requested = True
+        self.worker.cancel()
+        self.cancel_btn.configure(state='disabled')
+        self._append_log('正在取消…（当前任务完成后停止）')
 
     def _on_worker_event(self, event: WorkerEvent) -> None:
         self.after(0, lambda: self._handle_worker_event(event))
@@ -221,27 +252,36 @@ class M3u8GuiApp(TkinterDnD.Tk):
             self._finish_conversion(event.done_count, event.total_count)
 
     def _finish_conversion(self, done_count: int, total_count: int) -> None:
+        was_cancelled = self._cancel_requested
         self.is_converting = False
+        self._cancel_requested = False
         self.convert_btn.configure(state='normal', text='开始转换')
+        self.cancel_btn.configure(state='disabled')
         self.clear_btn.configure(state='normal')
         self.settings_btn.configure(state='normal')
         self.task_list.set_interactive(True)
         self.drop_zone.set_enabled(True)
         self._update_convert_button()
+        self.task_list.refresh_rows()
 
         failed = sum(1 for task in self.tasks if task.status == TaskStatus.ERROR)
+        skipped = sum(1 for task in self.tasks if task.status == TaskStatus.SKIPPED)
         if total_count == 0:
             self.progress_label.configure(text='')
             return
 
         self.progress.set(done_count / total_count if total_count else 1)
         summary = f'完成 {done_count}/{total_count}'
+        if skipped:
+            summary += f'，{skipped} 个已跳过'
         if failed:
             summary += f'，{failed} 个失败'
         self.progress_label.configure(text=summary)
         self._append_log(summary)
 
-        if failed:
+        if was_cancelled:
+            messagebox.showinfo('已取消', summary)
+        elif failed:
             messagebox.showwarning('转换完成', summary)
         else:
             messagebox.showinfo('转换完成', summary)

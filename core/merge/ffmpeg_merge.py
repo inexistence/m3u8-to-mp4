@@ -43,11 +43,18 @@ class FfmpegMerger(TsMerger):
             self._pbar.close()
             self._pbar = None
 
-        self.merged_ts_file.close()
-        tqdm.write('converting to mp4...')
-        try:
-            # 进度条已关闭，可直接输出 ffmpeg 日志
-            ffmpeg.input(str(self.merged_ts_path)).output(str(self.target_file_path), c='copy').run()
-            tqdm.write(f'merge success, output = {self.target_file_path}')
-        finally:
+        if self.merged_ts_file is not None:
+            self.merged_ts_file.close()
+            self.merged_ts_file = None
+            tqdm.write('converting to mp4...')
+            try:
+                # 进度条已关闭，可直接输出 ffmpeg 日志
+                ffmpeg.input(str(self.merged_ts_path)).output(str(self.target_file_path), c='copy').run()
+                tqdm.write(f'merge success, output = {self.target_file_path}')
+            finally:
+                if self.tmp_dir is not None:
+                    shutil.rmtree(self.tmp_dir)
+                    self.tmp_dir = None
+        elif self.tmp_dir is not None:
             shutil.rmtree(self.tmp_dir)
+            self.tmp_dir = None

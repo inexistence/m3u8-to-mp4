@@ -8,6 +8,7 @@ from core.merge.ffmpeg_merge import FfmpegMerger
 from core.m3u8_stream import M3U8StreamInfoParser
 from core.m3u8_ts_parser import SimpleM3U8TsParser
 from core.utils.config import GlobalConfig
+from core.utils.ffmpeg_check import ensure_ffmpeg
 from core.utils.output import resolve_unique_output_path
 
 
@@ -29,6 +30,7 @@ class M3U8Converter:
         self.m3u8_stream_info_parser.print_stream_info()
 
     def convert(self, stream_index: int | None = None):
+        ensure_ffmpeg()
         self.m3u8_stream_info_parser.parse()
         streams = self.m3u8_stream_info_parser.streams
 

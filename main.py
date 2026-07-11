@@ -2,7 +2,9 @@ from core.m3u8converter import M3U8Converter
 from core.discovery import find_entry_m3u8
 import argparse
 from core.utils.config import (get_global_config, GlobalConfig)
+from core.utils.ffmpeg_check import ensure_ffmpeg, ffmpeg_missing_message
 import os
+import sys
 from pathlib import Path
 
 def handle_file(index_file_path: str|Path, config: GlobalConfig):
@@ -12,6 +14,12 @@ def handle_file(index_file_path: str|Path, config: GlobalConfig):
 
 
 def main(path_name: Path):
+    try:
+        ensure_ffmpeg()
+    except RuntimeError:
+        print(ffmpeg_missing_message(), file=sys.stderr)
+        sys.exit(1)
+
     config = get_global_config()
 
     if os.path.isfile(path_name):
