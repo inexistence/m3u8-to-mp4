@@ -1,20 +1,27 @@
 """GUI 主窗口。"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import TclError, filedialog, messagebox
 from tkinterdnd2 import TkinterDnD
 
 from core.discovery import M3u8Entry, find_entry_m3u8_from_paths
-from core.utils.config import get_global_config
+from core.utils.config import get_global_config, save_local_config
 from core.utils.ffmpeg_check import find_ffmpeg, ffmpeg_missing_message
 from gui import theme as t
 from gui.settings_dialog import SettingsDialog
-from gui.drop_zone import DropZone
 from gui.models import ConversionTask, TaskStatus
-from gui.task_list import TaskList
+from gui.task_list import (
+    QueueFeedback,
+    TaskList,
+    batch_feedback,
+    conversion_feedback,
+    scan_feedback,
+    should_clear_feedback,
+)
 from gui.worker import ConversionWorker, WorkerEvent
 
 
@@ -29,40 +36,93 @@ class M3u8GuiApp(TkinterDnD.Tk):
 
         self.global_config = get_global_config()
         self.tasks: list[ConversionTask] = []
+        self._active_batch: tuple[ConversionTask, ...] = ()
         self.worker: ConversionWorker | None = None
         self.is_converting = False
         self._cancel_requested = False
         self._settings_dialog: SettingsDialog | None = None
+        self._appearance_mode = ctk.get_appearance_mode()
+        self._appearance_check_job: str | None = None
+        self._queue_feedback_clear_job: str | None = None
+        self._queue_feedback = QueueFeedback()
+        self._is_destroying = False
 
         self._apply_root_background()
+        self._register_appearance_callback()
         self._build_ui()
+        self._schedule_appearance_check()
         self.after(200, self._warn_if_ffmpeg_missing)
 
     def _warn_if_ffmpeg_missing(self) -> None:
+        self._refresh_ffmpeg_status()
         if find_ffmpeg() is None:
             messagebox.showwarning('缺少 FFmpeg', ffmpeg_missing_message(), parent=self)
 
     def _apply_root_background(self) -> None:
         self.configure(bg=t.frame_bg())
 
+    def _register_appearance_callback(self) -> None:
+        """在 CustomTkinter 支持时同步原生 Tk 根窗口的背景色。"""
+        register_callback = getattr(ctk, 'set_appearance_mode_callback', None)
+        if callable(register_callback):
+            register_callback(self._on_appearance_mode_changed)
+
+    def _on_appearance_mode_changed(self, *_args) -> None:
+        if not self._is_destroying:
+            try:
+                self._appearance_mode = ctk.get_appearance_mode()
+                self._apply_root_background()
+            except TclError:
+                self._is_destroying = True
+
+    def _schedule_appearance_check(self) -> None:
+        if not self._is_destroying and self._appearance_check_job is None:
+            self._appearance_check_job = self.after(250, self._check_appearance_mode)
+
+    def _check_appearance_mode(self) -> None:
+        self._appearance_check_job = None
+        if self._is_destroying:
+            return
+        try:
+            mode = ctk.get_appearance_mode()
+            if mode != self._appearance_mode:
+                self._appearance_mode = mode
+                self._apply_root_background()
+        except TclError:
+            self._is_destroying = True
+        else:
+            self._schedule_appearance_check()
+
+    def destroy(self) -> None:
+        self._is_destroying = True
+        if self._appearance_check_job is not None:
+            try:
+                self.after_cancel(self._appearance_check_job)
+            except Exception:
+                pass
+            self._appearance_check_job = None
+        if self._queue_feedback_clear_job is not None:
+            try:
+                self.after_cancel(self._queue_feedback_clear_job)
+            except Exception:
+                pass
+            self._queue_feedback_clear_job = None
+        super().destroy()
+
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
         self._build_header()
-        self._build_body()
-        self._build_footer()
+        self._build_workspace()
 
     def _build_header(self) -> None:
-        header = ctk.CTkFrame(self, fg_color='transparent')
+        header = t.style_card(ctk.CTkFrame(self))
         header.grid(row=0, column=0, sticky='ew', padx=t.SPACE_LG, pady=(t.SPACE_LG, t.SPACE_SM))
-        header.grid_columnconfigure(1, weight=1)
-
-        accent_bar = ctk.CTkFrame(header, width=4, height=40, corner_radius=2, fg_color=t.ACCENT)
-        accent_bar.grid(row=0, column=0, rowspan=2, sticky='ns', padx=(0, t.SPACE_MD))
+        header.grid_columnconfigure(0, weight=1)
 
         title_block = ctk.CTkFrame(header, fg_color='transparent')
-        title_block.grid(row=0, column=1, sticky='w')
+        title_block.grid(row=0, column=0, sticky='w', padx=t.SPACE_MD, pady=t.SPACE_MD)
 
         ctk.CTkLabel(
             title_block,
@@ -77,106 +137,55 @@ class M3u8GuiApp(TkinterDnD.Tk):
             text_color=t.MUTED,
         ).pack(anchor='w', pady=(2, 0))
 
-        self.settings_btn = t.style_secondary_button(
-            ctk.CTkButton(header, text='⚙  设置', command=self.open_settings),
-            width=96,
+        self.ffmpeg_status = ctk.CTkLabel(
+            header,
+            font=t.font_caption(),
+            corner_radius=t.RADIUS_SM,
+            height=28,
+            padx=t.SPACE_SM,
         )
-        self.settings_btn.grid(row=0, column=2, rowspan=2, sticky='e')
+        self.ffmpeg_status.grid(row=0, column=1, sticky='e', padx=(t.SPACE_MD, t.SPACE_SM))
+        self._refresh_ffmpeg_status()
 
-    def _build_body(self) -> None:
-        body = ctk.CTkFrame(self, fg_color='transparent')
-        body.grid(row=1, column=0, sticky='nsew', padx=t.SPACE_LG, pady=t.SPACE_SM)
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(2, weight=1)
+        self.settings_btn = t.style_secondary_button(
+            ctk.CTkButton(header, text='设置', command=self.open_settings),
+            width=80,
+        )
+        self.settings_btn.grid(row=0, column=2, sticky='e', padx=t.SPACE_MD, pady=t.SPACE_MD)
 
-        t.style_section_label(
-            ctk.CTkLabel(body, text='导入'),
-            '导入',
-        ).grid(row=0, column=0, sticky='w', pady=(0, t.SPACE_SM))
+    def _refresh_ffmpeg_status(self) -> None:
+        available = find_ffmpeg() is not None
+        self.ffmpeg_status.configure(
+            text='● FFmpeg 已就绪' if available else '● 未找到 FFmpeg',
+            fg_color=t.ACCENT_MUTED if available else t.STATUS_META['error']['background'],
+            text_color=t.ACCENT if available else t.ERROR,
+        )
 
-        self.drop_zone = DropZone(body, on_paths_dropped=self.add_paths, height=140)
-        self.drop_zone.grid(row=1, column=0, sticky='ew', pady=(0, t.SPACE_LG))
+    def _build_workspace(self) -> None:
+        workspace = ctk.CTkFrame(self, fg_color='transparent')
+        workspace.grid(row=1, column=0, sticky='nsew', padx=t.SPACE_LG, pady=t.SPACE_SM)
+        workspace.grid_columnconfigure(0, weight=1)
+        workspace.grid_rowconfigure(0, weight=1)
 
-        queue_header = ctk.CTkFrame(body, fg_color='transparent')
-        queue_header.grid(row=2, column=0, sticky='new', pady=(0, t.SPACE_SM))
-        queue_header.grid_columnconfigure(0, weight=1)
-
-        t.style_section_label(
-            ctk.CTkLabel(queue_header, text='任务队列'),
-            '任务队列',
-        ).grid(row=0, column=0, sticky='w')
-
-        queue_card = t.style_card(ctk.CTkFrame(body))
-        queue_card.grid(row=3, column=0, sticky='nsew')
+        queue_card = t.style_card(ctk.CTkFrame(workspace))
+        queue_card.grid(row=0, column=0, sticky='nsew')
         queue_card.grid_columnconfigure(0, weight=1)
         queue_card.grid_rowconfigure(0, weight=1)
-        body.grid_rowconfigure(3, weight=1)
 
-        self.task_list = TaskList(queue_card, on_selection_changed=self._update_convert_button)
+        self.task_list = TaskList(
+            queue_card,
+            on_selection_changed=self._update_convert_button,
+            output_directory=self.global_config.output_directory,
+            on_output_directory_changed=self._set_output_directory,
+            on_choose_output_directory=self._choose_output_directory,
+            on_open_output_directory=self._open_output_directory,
+            on_paths_dropped=self.add_paths,
+            on_clear_tasks=self.clear_tasks,
+            on_start_conversion=self.start_conversion,
+            on_cancel_conversion=self.cancel_conversion,
+            on_copy_error=self._copy_error_details,
+        )
         self.task_list.grid(row=0, column=0, sticky='nsew', padx=t.SPACE_MD, pady=t.SPACE_MD)
-
-    def _build_footer(self) -> None:
-        footer = ctk.CTkFrame(self, fg_color='transparent')
-        footer.grid(row=2, column=0, sticky='ew', padx=t.SPACE_LG, pady=(t.SPACE_SM, t.SPACE_LG))
-        footer.grid_columnconfigure(0, weight=1)
-
-        progress_row = ctk.CTkFrame(footer, fg_color='transparent')
-        progress_row.grid(row=0, column=0, sticky='ew', pady=(0, t.SPACE_SM))
-        progress_row.grid_columnconfigure(0, weight=1)
-
-        self.progress_label = ctk.CTkLabel(
-            progress_row,
-            text='',
-            font=t.font_caption(),
-            text_color=t.MUTED,
-            anchor='w',
-        )
-        self.progress_label.grid(row=0, column=0, sticky='w', pady=(0, t.SPACE_XS))
-
-        self.progress = ctk.CTkProgressBar(progress_row, height=8, corner_radius=4)
-        self.progress.grid(row=1, column=0, sticky='ew')
-        self.progress.set(0)
-
-        actions = ctk.CTkFrame(footer, fg_color='transparent')
-        actions.grid(row=1, column=0, sticky='ew', pady=(t.SPACE_MD, t.SPACE_MD))
-        actions.grid_columnconfigure(0, weight=1)
-
-        self.convert_btn = t.style_primary_button(
-            ctk.CTkButton(actions, text='开始转换', command=self.start_conversion),
-            width=140,
-        )
-        self.convert_btn.pack(side='right')
-
-        self.cancel_btn = t.style_danger_button(
-            ctk.CTkButton(actions, text='取消', command=self.cancel_conversion, state='disabled'),
-            width=100,
-        )
-        self.cancel_btn.pack(side='right', padx=(0, t.SPACE_SM))
-
-        self.clear_btn = t.style_secondary_button(
-            ctk.CTkButton(actions, text='清空列表', command=self.clear_tasks),
-            width=100,
-        )
-        self.clear_btn.pack(side='right', padx=(0, t.SPACE_SM))
-
-        log_header = ctk.CTkFrame(footer, fg_color='transparent')
-        log_header.grid(row=2, column=0, sticky='ew', pady=(0, t.SPACE_XS))
-
-        t.style_section_label(
-            ctk.CTkLabel(log_header, text='运行日志'),
-            '运行日志',
-        ).pack(side='left')
-
-        self.log_box = ctk.CTkTextbox(
-            footer,
-            height=110,
-            font=t.font_mono(),
-            fg_color=t.LOG_BG,
-            text_color=t.LOG_FG,
-            corner_radius=t.RADIUS_SM,
-        )
-        self.log_box.grid(row=3, column=0, sticky='ew')
-        self.log_box.configure(state='disabled')
 
     def open_settings(self) -> None:
         if self.is_converting:
@@ -190,46 +199,144 @@ class M3u8GuiApp(TkinterDnD.Tk):
         self._settings_dialog = SettingsDialog(
             self,
             self.global_config,
-            on_saved=lambda: self._append_log('设置已更新'),
+            on_saved=self._on_settings_saved,
         )
 
-    def add_paths(self, paths: list[Path]) -> None:
-        if self.is_converting:
-            messagebox.showwarning('提示', '转换进行中，请等待完成后再添加文件')
-            return
+    def _on_settings_saved(self) -> None:
+        self.task_list.set_output_directory(self.global_config.output_directory)
+        self.task_list.set_tasks(self.tasks)
+        self._set_queue_feedback('')
 
-        entries = find_entry_m3u8_from_paths(paths)
+    def _set_output_directory(self, output_directory: str | None) -> None:
+        if self.is_converting:
+            return
+        previous_directory = self.global_config.output_directory
+        self.global_config.output_directory = output_directory
+        try:
+            save_local_config(self.global_config)
+        except OSError as exc:
+            self.global_config.output_directory = previous_directory
+            messagebox.showerror('保存失败', f'无法写入配置文件：\n{exc}', parent=self)
+        finally:
+            self.task_list.set_output_directory(self.global_config.output_directory)
+
+    def _choose_output_directory(self) -> None:
+        if self.is_converting:
+            return
+        directory = filedialog.askdirectory(
+            title='选择 MP4 输出目录',
+            initialdir=self.global_config.output_directory or None,
+            parent=self,
+        )
+        if directory:
+            self._set_output_directory(directory)
+        else:
+            self._set_output_directory(None)
+
+    def _open_output_directory(self) -> None:
+        output_directory = self.global_config.output_directory
+        if not output_directory:
+            return
+        path = Path(output_directory)
+        if not path.is_dir():
+            messagebox.showwarning('无法打开目录', f'输出目录不存在：\n{path}', parent=self)
+            return
+        try:
+            os.startfile(str(path.resolve()))
+        except OSError as exc:
+            messagebox.showerror('无法打开目录', f'无法打开输出目录：\n{exc}', parent=self)
+
+    def _set_queue_feedback(
+        self,
+        message: str,
+        tone: str = 'muted',
+        *,
+        persistent: bool = False,
+        clear_after_ms: int | None = None,
+    ) -> None:
+        """替换工具栏反馈；短暂扫描结果不会覆盖后续转换或失败状态。"""
+        if self._queue_feedback_clear_job is not None:
+            self.after_cancel(self._queue_feedback_clear_job)
+            self._queue_feedback_clear_job = None
+        feedback = QueueFeedback(message, tone, persistent)
+        self._queue_feedback = feedback
+        self.task_list.set_queue_feedback(feedback)
+        if message and clear_after_ms is not None and not persistent:
+            self._queue_feedback_clear_job = self.after(
+                clear_after_ms,
+                lambda: self._clear_queue_feedback_if_current(feedback),
+            )
+
+    def _clear_queue_feedback_if_current(self, scheduled: QueueFeedback) -> None:
+        self._queue_feedback_clear_job = None
+        if should_clear_feedback(self._queue_feedback, scheduled):
+            self._set_queue_feedback('')
+
+    def add_paths(self, paths: list[Path]) -> None:
+        try:
+            entries = find_entry_m3u8_from_paths(paths)
+        except (OSError, ValueError) as exc:
+            self._set_queue_feedback(f'导入失败：{exc}', 'error', persistent=True)
+            return
         if not entries:
-            messagebox.showinfo('未找到文件', '没有找到可用的 .m3u8 入口文件')
+            self._set_queue_feedback(
+                '扫描完成：添加 0，重复 0，无法解析 0；未找到可用的 .m3u8 入口文件',
+                'warning',
+                clear_after_ms=4000,
+            )
             return
 
         existing = {task.path.resolve() for task in self.tasks}
         added = 0
+        duplicates = 0
+        unparseable = 0
         for entry_path in entries:
             if entry_path in existing:
+                duplicates += 1
                 continue
-            entry = M3u8Entry.from_path(entry_path)
+            try:
+                entry = M3u8Entry.from_path(entry_path)
+            except Exception:
+                unparseable += 1
+                continue
             self.tasks.append(ConversionTask(entry=entry))
             existing.add(entry_path)
             added += 1
 
         self.tasks.sort(key=lambda task: str(task.path).lower())
         self.task_list.set_tasks(self.tasks)
-        self._append_log(f'扫描完成，新增 {added} 个文件，共 {len(self.tasks)} 个')
+        if self.is_converting:
+            self.task_list.select_all_cb.configure(state='disabled')
+            self.task_list.set_clear_enabled(False)
+            self.task_list.set_output_controls_enabled(False)
+            self._set_batch_rows_interactive(False)
+        feedback = scan_feedback(added, duplicates, unparseable, len(self.tasks))
+        if self.is_converting and added:
+            feedback += '；新增任务将在下一批转换'
+        self._set_queue_feedback(
+            feedback,
+            'success' if added else 'warning',
+            clear_after_ms=4000,
+        )
 
     def clear_tasks(self) -> None:
         if self.is_converting:
             return
         self.tasks.clear()
         self.task_list.set_tasks(self.tasks)
-        self.progress.set(0)
-        self.progress_label.configure(text='')
-        self._append_log('已清空任务列表')
+        self._set_queue_feedback('')
 
     def _update_convert_button(self) -> None:
-        selected = any(task.selected for task in self.tasks)
-        if not self.is_converting:
-            self.convert_btn.configure(state='normal' if selected else 'disabled')
+        self.task_list.update_action_state()
+
+    def _sync_queue_actions(self) -> None:
+        self.task_list.set_converting(self.is_converting)
+
+    def _set_batch_rows_interactive(self, enabled: bool) -> None:
+        batch_tasks = set(map(id, self._active_batch))
+        for row in self.task_list.rows:
+            if id(row.task) in batch_tasks:
+                row.set_enabled(enabled)
 
     def start_conversion(self) -> None:
         if self.is_converting:
@@ -243,26 +350,27 @@ class M3u8GuiApp(TkinterDnD.Tk):
             return
 
         for task in self.tasks:
-            if task.selected:
+            if task in selected_tasks:
                 task.status = TaskStatus.PENDING
                 task.error_message = ''
         self.task_list.refresh_rows()
+        self._active_batch = tuple(selected_tasks)
 
         self.global_config.reload_from_disk()
-        self._append_log(f'输出文件名配置: {self.global_config.output_file_name}')
+        self.task_list.set_output_directory(self.global_config.output_directory)
+        self.task_list.set_tasks(self.tasks)
 
         self.is_converting = True
         self._cancel_requested = False
-        self.convert_btn.configure(state='disabled', text='转换中…')
-        self.cancel_btn.configure(state='normal')
-        self.clear_btn.configure(state='disabled')
+        self._set_queue_feedback(conversion_feedback(0, len(self._active_batch)), 'accent')
+        self._sync_queue_actions()
+        self.task_list.set_clear_enabled(False)
+        self.task_list.set_output_controls_enabled(False)
         self.settings_btn.configure(state='disabled')
         self.task_list.set_interactive(False)
-        self.drop_zone.set_enabled(False)
-        self.progress.set(0)
-        self.progress_label.configure(text='准备开始…')
+        self._set_batch_rows_interactive(False)
 
-        self.worker = ConversionWorker(self.tasks, self.global_config, self._on_worker_event)
+        self.worker = ConversionWorker(self._active_batch, self.global_config, self._on_worker_event)
         self.worker.start()
 
     def cancel_conversion(self) -> None:
@@ -270,35 +378,47 @@ class M3u8GuiApp(TkinterDnD.Tk):
             return
         self._cancel_requested = True
         self.worker.cancel()
-        self.cancel_btn.configure(state='disabled')
-        self._append_log('正在取消…（当前任务完成后停止）')
+        self.task_list.cancel_btn.configure(state='disabled', text='正在取消…')
 
     def _on_worker_event(self, event: WorkerEvent) -> None:
         self.after(0, lambda: self._handle_worker_event(event))
 
     def _handle_worker_event(self, event: WorkerEvent) -> None:
         if event.kind == 'log':
-            self._append_log(event.message)
             return
 
         if event.kind == 'started':
-            self.progress_label.configure(text=f'共 {event.total_count} 个任务')
+            self._set_queue_feedback(conversion_feedback(0, event.total_count), 'accent')
             return
 
         if event.kind == 'task_started':
-            self.progress_label.configure(text=f'正在转换 ({event.done_count + 1}/{event.total_count}): {event.message}')
+            self._set_queue_feedback(
+                conversion_feedback(event.done_count, event.total_count),
+                'accent',
+            )
             self.task_list.refresh_rows()
             return
 
+        if event.kind == 'task_progress':
+            if 0 <= event.task_index < len(self._active_batch):
+                active_task = self._active_batch[event.task_index]
+                row_index = next(
+                    index for index, task in enumerate(self.tasks)
+                    if task is active_task
+                )
+                self.task_list.set_task_progress(
+                    row_index,
+                    event.progress_phase,
+                    event.message,
+                    event.progress_percent,
+                )
+            return
+
         if event.kind == 'task_done':
-            if event.total_count:
-                self.progress.set(event.done_count / event.total_count)
-            self._append_log(event.message)
             self.task_list.refresh_rows()
             return
 
         if event.kind == 'task_error':
-            self._append_log(event.message)
             self.task_list.refresh_rows()
             return
 
@@ -313,29 +433,29 @@ class M3u8GuiApp(TkinterDnD.Tk):
         was_cancelled = self._cancel_requested
         self.is_converting = False
         self._cancel_requested = False
-        self.convert_btn.configure(state='normal', text='开始转换')
-        self.cancel_btn.configure(state='disabled')
-        self.clear_btn.configure(state='normal')
+        self.task_list.cancel_btn.configure(state='normal', text='取消')
+        self._sync_queue_actions()
+        self.task_list.set_clear_enabled(True)
         self.settings_btn.configure(state='normal')
         self.task_list.set_interactive(True)
-        self.drop_zone.set_enabled(True)
         self._update_convert_button()
         self.task_list.refresh_rows()
 
-        failed = sum(1 for task in self.tasks if task.status == TaskStatus.ERROR)
-        skipped = sum(1 for task in self.tasks if task.status == TaskStatus.SKIPPED)
-        if total_count == 0:
-            self.progress_label.configure(text='')
-            return
-
-        self.progress.set(done_count / total_count if total_count else 1)
+        failed_tasks = [task for task in self._active_batch if task.status == TaskStatus.ERROR]
+        completed_tasks = [task for task in self._active_batch if task.status == TaskStatus.DONE]
+        cancelled_tasks = [task for task in self._active_batch if task.status == TaskStatus.SKIPPED]
+        failed = len(failed_tasks)
+        skipped = len(cancelled_tasks)
         summary = f'完成 {done_count}/{total_count}'
         if skipped:
             summary += f'，{skipped} 个已跳过'
         if failed:
             summary += f'，{failed} 个失败'
-        self.progress_label.configure(text=summary)
-        self._append_log(summary)
+        self._set_queue_feedback(
+            batch_feedback(len(completed_tasks), failed, skipped),
+            'warning' if failed or skipped else 'success',
+            persistent=bool(failed),
+        )
 
         if was_cancelled:
             messagebox.showinfo('已取消', summary)
@@ -344,12 +464,25 @@ class M3u8GuiApp(TkinterDnD.Tk):
         else:
             messagebox.showinfo('转换完成', summary)
 
-    def _append_log(self, message: str) -> None:
-        self.log_box.configure(state='normal')
-        self.log_box.insert('end', message + '\n')
-        self.log_box.see('end')
-        self.log_box.configure(state='disabled')
+    def _error_details(self, task: ConversionTask) -> str:
+        return (
+            f'任务：{task.path.name}\n'
+            f'路径：{task.path}\n'
+            f'错误详情：{task.error_message or "未提供错误详情"}'
+        )
 
+    def _copy_error_details(self, task: ConversionTask) -> None:
+        self._copy_text(self._error_details(task))
+
+    def _copy_text(self, text: str) -> bool:
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update_idletasks()
+            return True
+        except TclError:
+            messagebox.showwarning('无法复制', '当前系统剪贴板不可用', parent=self)
+            return False
 
 def run_app() -> None:
     app = M3u8GuiApp()

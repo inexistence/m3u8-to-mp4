@@ -2,6 +2,19 @@
 from pathlib import Path
 
 
+def resolve_output_directory(output_directory: str | Path | None, source_directory: Path) -> Path:
+    """解析输出目录；空值时使用源 m3u8 所在目录。"""
+    if output_directory is None or not str(output_directory).strip():
+        return source_directory.resolve()
+
+    resolved_directory = Path(output_directory).expanduser().resolve()
+    if not resolved_directory.exists():
+        raise FileNotFoundError(f'输出目录不存在：{resolved_directory}')
+    if not resolved_directory.is_dir():
+        raise NotADirectoryError(f'输出路径不是目录：{resolved_directory}')
+    return resolved_directory
+
+
 def resolve_unique_output_path(output_dir: Path, base_name: str, source_m3u8: Path) -> Path:
     """在同目录下选择不冲突的 MP4 输出路径。
 

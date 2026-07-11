@@ -1,6 +1,6 @@
 # m3u8-to-mp4
 
-将本地 m3u8 索引及其 ts 分片合并为 MP4 文件的命令行工具。支持 AES-128 解密、多码率索引解析，以及 `#EXT-X-DISCONTINUITY` 分段处理。
+将本地 m3u8 索引及其 ts 分片合并为 MP4 文件的 Windows 桌面应用与命令行工具。支持 AES-128 解密、多码率索引解析，以及 `#EXT-X-DISCONTINUITY` 分段处理。
 
 ## 功能特性
 
@@ -8,7 +8,8 @@
 - 支持 `AES-128` 加密分片解密（需本地存在 key 文件）
 - 自动解析主播放列表（`#EXT-X-STREAM-INF`），支持按带宽自动选流或交互式选择
 - 支持单文件或递归扫描目录下所有 `.m3u8` 文件
-- 通过 `config.yaml` 配置输出文件名、分段跳过等行为
+- 提供 Windows GUI：拖放导入、批量队列、输出目录选择及任务行内进度/失败详情
+- 通过 `config.yaml` 配置输出文件名、输出目录、分段跳过等行为
 
 ## 环境要求
 
@@ -58,16 +59,21 @@ python gui_app.py
 
 打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。将 exe 放到任意目录即可使用；如需覆盖默认配置，可在 exe 同目录放置 `local_config.yaml`。
 
-GUI 功能：
+#### GUI 使用
 
-- 拖放或浏览选择 `.m3u8` 文件 / 文件夹
-- 自动扫描入口索引，勾选需要转换的项目
-- 多码率主播放列表可在列表中为每个文件单独选择码率
-- 批量转换并显示进度与日志
+主窗口以单个转换队列为核心：输出目录栏、批量操作栏、持续导入入口和任务列表始终处于同一工作区。
+
+1. 在持续导入栏拖放 `.m3u8` 文件/文件夹，或选择文件、文件夹。程序会扫描入口索引、跳过重复项，并在工具栏内显示导入结果。
+2. 在“输出到”栏选择“源目录”或“指定目录”。切换至指定目录时选择目标文件夹；目录名称可点击打开。源目录模式下，每个任务输出到各自 m3u8 所在目录。
+3. 勾选要转换的任务。主播放列表会显示可选码率下拉框；单流任务显示“码率：单流”。
+4. 点击“开始转换”。已选任务会冻结为当前批次，运行时可继续导入任务，但新增任务仅在下一批执行。
+5. 任务行显示当前阶段的真实进度：合片阶段与 FFmpeg 封装阶段依次进行。失败任务可展开查看和复制错误详情。
+
+点击右上角“设置”可调整输出文件名、AES-128 分片 IV 模式及分段处理选项。设置会保存到 `local_config.yaml`，并在下一次转换时生效；转换进行中无法打开设置。输出目录在队列顶部设置，同样会写入 `local_config.yaml`。
 
 ### 命令行
 
-将 `index.m3u8` 文件路径，或包含该文件的文件夹路径作为参数传入。输出 MP4 将生成在对应 `index.m3u8` 所在目录下。
+将 `index.m3u8` 文件路径，或包含该文件的文件夹路径作为参数传入。默认输出 MP4 到对应 `index.m3u8` 所在目录；配置 `output_directory` 后则输出到指定目录。
 
 ```shell
 python .\main.py "path\to\index.m3u8"
@@ -98,6 +104,10 @@ skip_first_part: false
 # 可使用 __DIR_NAME__ 表示使用 index.m3u8 所在文件夹名作为文件名
 output_file_name: __DIR_NAME__
 
+# 输出目录。留空或设为 null 时，输出到各 m3u8 所在目录
+# 可填写绝对路径，例如 C:\Users\name\Videos
+output_directory: null
+
 # 遇到 #EXT-X-DISCONTINUITY 切换分段时，是否重置解密器
 reset_decryption_if_part_changed: true
 
@@ -107,7 +117,8 @@ reset_decryption_if_part_changed: true
 # - hls: 标准 HLS，整段密文 + m3u8 声明 IV 或分片序号
 aes_iv_mode: auto
 
-# 主播放列表（多码率）流选择策略
+# 主播放列表（多码率）流选择策略，仅命令行使用
+# GUI 中请在每个任务行选择码率
 # - highest_bandwidth: 选带宽最高的（默认）
 # - lowest_bandwidth: 选带宽最低的
 # - first: 选第一个
@@ -117,7 +128,7 @@ aes_iv_mode: auto
 stream_selection: highest_bandwidth
 ```
 
-如需本地覆盖配置且不希望提交到版本库，可在项目根目录创建 `local_config.yaml`，字段与 `config.yaml` 相同，同名项优先生效。
+如需本地覆盖配置且不希望提交到版本库，可在项目根目录创建 `local_config.yaml`，字段与 `config.yaml` 相同，同名项优先生效。指定的输出目录必须已存在；输出文件重名时程序会自动追加 m3u8 名称或序号以避免覆盖。
 
 ## 项目结构
 

@@ -30,10 +30,14 @@ class SettingsDialog(tk.Toplevel):
         self.on_saved = on_saved
 
         self.title('转换设置')
-        self.geometry('540x520')
+        self.geometry('560x620')
         self.resizable(False, False)
         self.transient(master)
-        self.configure(bg=t.frame_bg())
+        self._appearance_mode = ctk.get_appearance_mode()
+        self._appearance_check_job: str | None = None
+        self._feedback_clear_job: str | None = None
+        self._is_destroying = False
+        self._apply_toplevel_background()
         self.protocol('WM_DELETE_WINDOW', self._close)
 
         self.container = t.style_card(ctk.CTkFrame(self))
@@ -41,6 +45,7 @@ class SettingsDialog(tk.Toplevel):
 
         self._build_ui()
         self._load_values()
+        self._schedule_appearance_check()
 
         self.update_idletasks()
         self._center_on_master(master)
@@ -49,6 +54,28 @@ class SettingsDialog(tk.Toplevel):
         self.wait_visibility()
         self.grab_set()
 
+    def _apply_toplevel_background(self) -> None:
+        """同步原生 Toplevel 背景，避免系统主题切换后露出错误底色。"""
+        self.configure(bg=t.frame_bg())
+
+    def _schedule_appearance_check(self) -> None:
+        if not self._is_destroying and self._appearance_check_job is None:
+            self._appearance_check_job = self.after(250, self._check_appearance_mode)
+
+    def _check_appearance_mode(self) -> None:
+        self._appearance_check_job = None
+        if self._is_destroying:
+            return
+        try:
+            mode = ctk.get_appearance_mode()
+            if mode != self._appearance_mode:
+                self._appearance_mode = mode
+                self._apply_toplevel_background()
+        except tk.TclError:
+            self._is_destroying = True
+        else:
+            self._schedule_appearance_check()
+
     def _center_on_master(self, master) -> None:
         master.update_idletasks()
         x = master.winfo_x() + (master.winfo_width() - self.winfo_width()) // 2
@@ -56,6 +83,15 @@ class SettingsDialog(tk.Toplevel):
         self.geometry(f'+{max(x, 0)}+{max(y, 0)}')
 
     def _close(self) -> None:
+        self._is_destroying = True
+        for job_name in ('_appearance_check_job', '_feedback_clear_job'):
+            job = getattr(self, job_name, None)
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except tk.TclError:
+                    pass
+                setattr(self, job_name, None)
         try:
             self.grab_release()
         except tk.TclError:
@@ -69,15 +105,24 @@ class SettingsDialog(tk.Toplevel):
         ctk.CTkLabel(header, text='转换设置', font=t.font_title()).pack(anchor='w')
         ctk.CTkLabel(
             header,
-            text='以下设置保存后，下次转换时生效',
+            text='保存后将用于下一次转换；不会影响正在进行的任务。',
             font=t.font_caption(),
             text_color=t.MUTED,
         ).pack(anchor='w', pady=(2, 0))
 
-        body = ctk.CTkScrollableFrame(self.container, fg_color='transparent')
+        body = ctk.CTkScrollableFrame(
+            self.container,
+            fg_color='transparent',
+            scrollbar_button_color=t.TEXT_DISABLED,
+            scrollbar_button_hover_color=t.MUTED,
+        )
         body.pack(fill='both', expand=True, padx=t.SPACE_LG, pady=t.SPACE_SM)
 
-        self._add_section(body, '输出文件名')
+        output_group = self._add_section(
+            body,
+            '输出文件名',
+            '选择转换完成后 MP4 的命名方式。自定义名称会自动补全 .mp4 后缀。',
+        )
         self.output_mode = tk.StringVar(value='dir_name')
         for text, value in (
             ('使用 m3u8 所在文件夹名（推荐）', 'dir_name'),
@@ -85,61 +130,81 @@ class SettingsDialog(tk.Toplevel):
             ('自定义文件名', 'custom'),
         ):
             ctk.CTkRadioButton(
-                body,
+                output_group,
                 text=text,
                 variable=self.output_mode,
                 value=value,
                 command=self._update_output_mode,
                 font=t.font_body(),
-            ).pack(anchor='w', pady=3)
+            ).pack(anchor='w', padx=t.SPACE_MD, pady=3)
 
         self.custom_name_entry = ctk.CTkEntry(
-            body,
+            output_group,
             placeholder_text='例如：my_video.mp4',
             height=32,
             font=t.font_body(),
         )
-        self.custom_name_entry.pack(fill='x', pady=(t.SPACE_XS, 0))
+        self.custom_name_entry.pack(fill='x', padx=t.SPACE_MD, pady=(t.SPACE_XS, 0))
+        self.custom_name_entry.bind('<KeyRelease>', self._validate_custom_name)
+        self.custom_name_entry.bind('<FocusOut>', self._validate_custom_name)
+        self.custom_name_feedback = ctk.CTkLabel(
+            output_group,
+            text='',
+            font=t.font_caption(),
+            text_color=t.ERROR,
+            anchor='w',
+        )
+        self.custom_name_feedback.pack(fill='x', padx=t.SPACE_MD, pady=(t.SPACE_XS, t.SPACE_MD))
 
-        self._add_section(body, 'AES-128 分片 IV 模式')
-        self.aes_iv_menu = ctk.CTkOptionMenu(
+        aes_group = self._add_section(
             body,
+            'AES-128 分片 IV 模式',
+            '仅在加密视频无法转换时调整；默认的自动检测适用于大多数视频。',
+        )
+        self.aes_iv_menu = ctk.CTkOptionMenu(
+            aes_group,
             values=list(AES_IV_OPTIONS.keys()),
             height=32,
             font=t.font_body(),
         )
-        self.aes_iv_menu.pack(fill='x', pady=(t.SPACE_XS, 0))
-        ctk.CTkLabel(
-            body,
-            text='加密视频转换失败时可尝试切换此选项',
-            font=t.font_caption(),
-            text_color=t.MUTED,
-            anchor='w',
-        ).pack(fill='x', pady=(t.SPACE_XS, 0))
+        self.aes_iv_menu.pack(fill='x', padx=t.SPACE_MD, pady=(t.SPACE_XS, t.SPACE_MD))
 
-        self._add_section(body, '分段处理')
+        segment_group = self._add_section(
+            body,
+            '分段处理',
+            '这些选项只影响存在分段切换或加密状态变化的播放列表。',
+        )
         self.skip_first_part_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
-            body,
+            segment_group,
             text='跳过分段前第一段内容',
             variable=self.skip_first_part_var,
             font=t.font_body(),
-        ).pack(anchor='w', pady=3)
+        ).pack(anchor='w', padx=t.SPACE_MD, pady=3)
         ctk.CTkLabel(
-            body,
+            segment_group,
             text='仅在 m3u8 含 #EXT-X-DISCONTINUITY 时生效',
             font=t.font_caption(),
             text_color=t.MUTED,
             anchor='w',
-        ).pack(fill='x')
+        ).pack(fill='x', padx=t.SPACE_MD)
 
         self.reset_decrypt_var = tk.BooleanVar(value=True)
         ctk.CTkCheckBox(
-            body,
+            segment_group,
             text='分段切换时重置解密器',
             variable=self.reset_decrypt_var,
             font=t.font_body(),
-        ).pack(anchor='w', pady=(t.SPACE_SM, 3))
+        ).pack(anchor='w', padx=t.SPACE_MD, pady=(t.SPACE_SM, t.SPACE_MD))
+
+        self.save_feedback = ctk.CTkLabel(
+            self.container,
+            text='',
+            font=t.font_caption(),
+            text_color=t.SUCCESS,
+            anchor='w',
+        )
+        self.save_feedback.pack(fill='x', padx=t.SPACE_LG)
 
         footer = ctk.CTkFrame(self.container, fg_color='transparent')
         footer.pack(fill='x', padx=t.SPACE_LG, pady=(t.SPACE_SM, t.SPACE_LG))
@@ -154,9 +219,30 @@ class SettingsDialog(tk.Toplevel):
             width=90,
         ).pack(side='right', padx=(0, t.SPACE_SM))
 
-    def _add_section(self, parent, text: str) -> None:
-        ctk.CTkFrame(parent, height=1, fg_color=t.SECONDARY).pack(fill='x', pady=(t.SPACE_LG, t.SPACE_SM))
-        t.style_section_label(ctk.CTkLabel(parent, text=text), text).pack(fill='x', pady=(0, t.SPACE_SM))
+    def _add_section(self, parent, title: str, help_text: str) -> ctk.CTkFrame:
+        group = ctk.CTkFrame(
+            parent,
+            fg_color=t.SURFACE_MUTED,
+            corner_radius=t.RADIUS_MD,
+            border_width=1,
+            border_color=t.BORDER,
+        )
+        group.pack(fill='x', pady=(0, t.SPACE_SM))
+        t.style_section_label(ctk.CTkLabel(group, text=title), title).pack(
+            fill='x',
+            padx=t.SPACE_MD,
+            pady=(t.SPACE_MD, 2),
+        )
+        ctk.CTkLabel(
+            group,
+            text=help_text,
+            font=t.font_caption(),
+            text_color=t.MUTED,
+            anchor='w',
+            justify='left',
+            wraplength=480,
+        ).pack(fill='x', padx=t.SPACE_MD, pady=(0, t.SPACE_SM))
+        return group
 
     def _load_values(self) -> None:
         output_name = self.global_config.output_file_name
@@ -176,6 +262,18 @@ class SettingsDialog(tk.Toplevel):
     def _update_output_mode(self) -> None:
         enabled = self.output_mode.get() == 'custom'
         self.custom_name_entry.configure(state='normal' if enabled else 'disabled')
+        self._validate_custom_name()
+
+    def _validate_custom_name(self, _event=None) -> bool:
+        """以行内反馈提示唯一会阻止保存的输入条件。"""
+        is_custom = self.output_mode.get() == 'custom'
+        has_name = bool(self.custom_name_entry.get().strip())
+        is_valid = not is_custom or has_name
+        self.custom_name_entry.configure(border_color=t.BORDER if is_valid else t.ERROR)
+        self.custom_name_feedback.configure(
+            text='' if is_valid else '请输入自定义文件名后再保存。',
+        )
+        return is_valid
 
     def _resolve_output_name(self) -> str | None:
         mode = self.output_mode.get()
@@ -186,7 +284,8 @@ class SettingsDialog(tk.Toplevel):
 
         custom = self.custom_name_entry.get().strip()
         if not custom:
-            messagebox.showwarning('提示', '请输入自定义文件名', parent=self)
+            self._validate_custom_name()
+            self.custom_name_entry.focus_set()
             return None
         if not custom.endswith('.mp4'):
             custom += '.mp4'
@@ -213,5 +312,15 @@ class SettingsDialog(tk.Toplevel):
 
         if self.on_saved:
             self.on_saved()
-        messagebox.showinfo('已保存', '设置已保存，下次转换时生效', parent=self)
-        self._close()
+        self._show_save_feedback()
+
+    def _show_save_feedback(self) -> None:
+        self.save_feedback.configure(text='✓ 设置已保存，将在下一次转换时生效。')
+        if self._feedback_clear_job is not None:
+            self.after_cancel(self._feedback_clear_job)
+        self._feedback_clear_job = self.after(3500, self._clear_save_feedback)
+
+    def _clear_save_feedback(self) -> None:
+        self._feedback_clear_job = None
+        if not self._is_destroying:
+            self.save_feedback.configure(text='')

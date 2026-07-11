@@ -3,13 +3,14 @@
 负责串联主播放列表选流、媒体播放列表解析、分片合并等步骤，本身不直接解析 m3u8 内容。
 """
 from pathlib import Path
+from typing import Callable
 
 from core.merge.ffmpeg_merge import FfmpegMerger
 from core.m3u8_stream import M3U8StreamInfoParser
 from core.m3u8_ts_parser import SimpleM3U8TsParser
 from core.utils.config import GlobalConfig
 from core.utils.ffmpeg_check import ensure_ffmpeg
-from core.utils.output import resolve_unique_output_path
+from core.utils.output import resolve_output_directory, resolve_unique_output_path
 
 
 class M3U8Converter:
@@ -29,7 +30,12 @@ class M3U8Converter:
     def print_stream_info(self):
         self.m3u8_stream_info_parser.print_stream_info()
 
-    def convert(self, stream_index: int | None = None):
+    def convert(
+        self,
+        stream_index: int | None = None,
+        progress_callback: Callable[[str, int, int | None], None] | None = None,
+    ):
+        output_directory = resolve_output_directory(self.config.output_directory, self.dir)
         ensure_ffmpeg()
         self.m3u8_stream_info_parser.parse()
         streams = self.m3u8_stream_info_parser.streams
@@ -52,11 +58,12 @@ class M3U8Converter:
         if out_put_file_name == '__DIR_NAME__':
             out_put_file_name = self.dir.name
 
-        output_path = resolve_unique_output_path(self.dir, out_put_file_name, self.m3u8_index_file_path)
+        output_path = resolve_unique_output_path(output_directory, out_put_file_name, self.m3u8_index_file_path)
         print(f'output: {output_path}')
 
-        merger = FfmpegMerger(output_path)
+        merger = FfmpegMerger(output_path, progress_callback=progress_callback)
         ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger, aes_iv_mode=self.config.aes_iv_mode)
+        merger.set_media_duration_ms(ts_parser.get_total_duration_ms())
         ts_parser.set_skip_first_part(self.config.skip_first_part)
         ts_parser.set_reset_decryption_if_part_changed(self.config.reset_decryption_if_part_changed)
         ts_parser.merge()

@@ -1,5 +1,6 @@
 """媒体播放列表解析：读取 .ts 分片、解密并写入合并器。"""
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
 
 import core.utils.file as file
 from core.decrypt import get_decryption
@@ -14,6 +15,7 @@ KEY_DECRYPT_KEY = '#EXT-X-KEY:'
 KEY_METHOD = 'METHOD'
 KEY_URI = 'URI'
 KEY_IV = 'IV'
+KEY_EXTINF = '#EXTINF:'
 
 
 def parse_key_value(content: str, header: str) -> dict:
@@ -59,6 +61,28 @@ class SimpleM3U8TsParser:
 
     def set_reset_decryption_if_part_changed(self, reset: bool):
         self.reset_decryption_if_part_changed = reset
+
+    def get_total_duration_ms(self) -> int | None:
+        """返回媒体播放列表中 #EXTINF 声明的总时长（毫秒）。"""
+        total_seconds = Decimal('0')
+        has_duration = False
+
+        def callback(_index: int, line: str):
+            nonlocal total_seconds, has_duration
+            line = line.strip()
+            if not line.startswith(KEY_EXTINF):
+                return
+            duration_text = line[len(KEY_EXTINF):].split(',', 1)[0].strip()
+            try:
+                total_seconds += Decimal(duration_text)
+                has_duration = True
+            except InvalidOperation:
+                return
+
+        file.read_lines(self.index_file_path, callback)
+        if not has_duration:
+            return None
+        return int(total_seconds * 1000)
 
     def __maybe_change_part(self, line: str):
         if line == KEY_DISCONTINUITY:

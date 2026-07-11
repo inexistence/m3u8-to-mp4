@@ -6,6 +6,10 @@ skip_first_part: false
 # 可使用 __DIR_NAME__ 表示使用 index.m3u8 所在文件夹名作为文件名
 output_file_name: __DIR_NAME__
 
+# 输出目录。留空或设为 null 时，输出到各 m3u8 所在目录
+# 可填写绝对路径，例如 C:\Users\name\Videos
+output_directory: null
+
 # 遇到 #EXT-X-DISCONTINUITY 切换分段时，是否重置解密器
 reset_decryption_if_part_changed: true
 
@@ -15,7 +19,8 @@ reset_decryption_if_part_changed: true
 # - hls: 标准 HLS，整段密文 + m3u8 声明 IV 或分片序号
 aes_iv_mode: auto
 
-# 主播放列表（多码率）流选择策略
+# 主播放列表（多码率）流选择策略，仅命令行使用
+# GUI 中请在每个任务行选择码率
 # - highest_bandwidth: 选带宽最高的（默认）
 # - lowest_bandwidth: 选带宽最低的
 # - first: 选第一个

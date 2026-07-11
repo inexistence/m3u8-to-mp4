@@ -29,14 +29,25 @@ class GlobalConfig:
     def __init__(self, config: dict):
         self.skip_first_part: bool = get_value(dict=config, key='skip_first_part', default_value=False)
         self.output_file_name: str = get_value(dict=config, key='output_file_name', default_value='output.mp4')
+        self.output_directory: str | None = self._normalize_output_directory(
+            get_value(dict=config, key='output_directory', default_value=None)
+        )
         self.reset_decryption_if_part_changed: bool = get_value(dict=config, key='reset_decryption_if_part_changed', default_value=True)
         self.aes_iv_mode: str = get_value(dict=config, key='aes_iv_mode', default_value='auto')
         self.stream_selection: str = get_value(dict=config, key='stream_selection', default_value='highest_bandwidth')
+
+    @staticmethod
+    def _normalize_output_directory(value: object) -> str | None:
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
     def to_local_dict(self) -> dict:
         return {
             'skip_first_part': self.skip_first_part,
             'output_file_name': self.output_file_name,
+            'output_directory': self.output_directory,
             'reset_decryption_if_part_changed': self.reset_decryption_if_part_changed,
             'aes_iv_mode': self.aes_iv_mode,
         }
@@ -46,6 +57,8 @@ class GlobalConfig:
             self.skip_first_part = bool(data['skip_first_part'])
         if 'output_file_name' in data:
             self.output_file_name = str(data['output_file_name'])
+        if 'output_directory' in data:
+            self.output_directory = self._normalize_output_directory(data['output_directory'])
         if 'reset_decryption_if_part_changed' in data:
             self.reset_decryption_if_part_changed = bool(data['reset_decryption_if_part_changed'])
         if 'aes_iv_mode' in data:
@@ -56,6 +69,7 @@ class GlobalConfig:
         fresh = get_global_config()
         self.skip_first_part = fresh.skip_first_part
         self.output_file_name = fresh.output_file_name
+        self.output_directory = fresh.output_directory
         self.reset_decryption_if_part_changed = fresh.reset_decryption_if_part_changed
         self.aes_iv_mode = fresh.aes_iv_mode
         self.stream_selection = fresh.stream_selection

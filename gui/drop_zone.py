@@ -17,48 +17,45 @@ class DropZone(ctk.CTkFrame):
             master,
             fg_color=t.DROP_BG,
             border_color=t.DROP_BORDER,
-            border_width=2,
-            corner_radius=t.RADIUS_LG,
+            border_width=1,
+            corner_radius=t.RADIUS_MD,
             **kwargs,
         )
         self.on_paths_dropped = on_paths_dropped
         self._enabled = True
+        self._compact = False
 
-        inner = ctk.CTkFrame(self, fg_color='transparent')
-        inner.pack(expand=True, fill='both', padx=t.SPACE_XL, pady=t.SPACE_XL)
+        self._content = ctk.CTkFrame(self, fg_color='transparent')
+        self._content.pack(expand=True, fill='both', padx=t.SPACE_XL, pady=t.SPACE_XL)
 
-        self.icon_label = ctk.CTkLabel(inner, text='⬇', font=t.font_icon(), text_color=t.ACCENT)
+        self.icon_label = ctk.CTkLabel(self._content, text='＋', font=t.font_icon(), text_color=t.MUTED)
         self.icon_label.pack(pady=(0, t.SPACE_SM))
 
         self.label = ctk.CTkLabel(
-            inner,
+            self._content,
             text='拖放 .m3u8 文件或文件夹到此处',
             font=t.font_body(),
         )
         self.label.pack(pady=(0, t.SPACE_XS))
 
         self.hint = ctk.CTkLabel(
-            inner,
+            self._content,
             text='支持同时拖入多个文件 / 文件夹，自动扫描入口索引',
             font=t.font_caption(),
             text_color=t.MUTED,
         )
         self.hint.pack(pady=(0, t.SPACE_MD))
 
-        btn_row = ctk.CTkFrame(inner, fg_color='transparent')
-        btn_row.pack()
-
         self.browse_file_btn = t.style_secondary_button(
-            ctk.CTkButton(btn_row, text='选择文件', command=self._browse_files),
+            ctk.CTkButton(self._content, text='选择文件', command=self.browse_files),
             width=110,
         )
-        self.browse_file_btn.pack(side='left', padx=(0, t.SPACE_SM))
-
+        self.browse_file_btn.pack(pady=(0, t.SPACE_XS))
         self.browse_dir_btn = t.style_secondary_button(
-            ctk.CTkButton(btn_row, text='选择文件夹', command=self._browse_dir),
+            ctk.CTkButton(self._content, text='选择文件夹', command=self.browse_directory),
             width=110,
         )
-        self.browse_dir_btn.pack(side='left')
+        self.browse_dir_btn.pack()
 
         self._register_dnd()
 
@@ -68,9 +65,45 @@ class DropZone(ctk.CTkFrame):
         self.browse_file_btn.configure(state=state)
         self.browse_dir_btn.configure(state=state)
         self.configure(fg_color=t.DROP_BG if enabled else t.SECONDARY)
-        self.icon_label.configure(text_color=t.ACCENT if enabled else t.MUTED)
-        self.label.configure(text_color=('#1e293b', '#e2e8f0') if enabled else t.MUTED)
+        self.icon_label.configure(text_color=t.MUTED)
+        self.label.configure(text_color=('gray25', 'gray85') if enabled else t.MUTED)
         self.hint.configure(text_color=t.MUTED)
+
+    def set_compact(self, compact: bool) -> None:
+        """切换空队列与持续导入的紧凑提示，拖放目标始终保持可用。"""
+        if self._compact == compact:
+            return
+        self._compact = compact
+        if compact:
+            self.configure(height=52)
+            self._content.pack_forget()
+            self._content.pack(fill='both', expand=True, padx=t.SPACE_MD, pady=t.SPACE_SM)
+            self.icon_label.pack_forget()
+            self.label.pack_forget()
+            self.browse_file_btn.pack_forget()
+            self.browse_dir_btn.pack_forget()
+            self.label.configure(text='拖放 .m3u8 文件或文件夹到此处', font=t.font_caption())
+            self.hint.pack_forget()
+            self.browse_file_btn.configure(text='添加文件')
+            self.browse_file_btn.pack(side='right')
+            self.browse_dir_btn.configure(text='添加文件夹')
+            self.browse_dir_btn.pack(side='right', padx=(0, t.SPACE_SM))
+            self.label.pack(side='left', fill='x', expand=True, pady=0)
+        else:
+            self.configure(height=160)
+            self._content.pack_forget()
+            self._content.pack(expand=True, fill='both', padx=t.SPACE_XL, pady=t.SPACE_XL)
+            self.label.pack_forget()
+            self.browse_file_btn.pack_forget()
+            self.browse_dir_btn.pack_forget()
+            self.icon_label.pack(pady=(0, t.SPACE_SM))
+            self.label.configure(text='拖放 .m3u8 文件或文件夹到此处', font=t.font_body())
+            self.label.pack(pady=(0, t.SPACE_XS))
+            self.hint.pack(pady=(0, t.SPACE_MD))
+            self.browse_file_btn.configure(text='选择文件')
+            self.browse_file_btn.pack(pady=(0, t.SPACE_XS))
+            self.browse_dir_btn.configure(text='选择文件夹')
+            self.browse_dir_btn.pack()
 
     def _register_dnd(self) -> None:
         self.drop_target_register(DND_FILES)
@@ -108,7 +141,7 @@ class DropZone(ctk.CTkFrame):
         if paths:
             self.on_paths_dropped(paths)
 
-    def _browse_files(self) -> None:
+    def browse_files(self) -> None:
         file_paths = filedialog.askopenfilenames(
             title='选择 m3u8 文件',
             filetypes=[('M3U8 文件', '*.m3u8'), ('所有文件', '*.*')],
@@ -116,7 +149,7 @@ class DropZone(ctk.CTkFrame):
         if file_paths:
             self.on_paths_dropped([Path(p) for p in file_paths])
 
-    def _browse_dir(self) -> None:
+    def browse_directory(self) -> None:
         dir_path = filedialog.askdirectory(title='选择文件夹')
         if dir_path:
             self.on_paths_dropped([Path(dir_path)])

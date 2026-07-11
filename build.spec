@@ -1,17 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 block_cipher = None
 
 datas = [('config.yaml', '.'), ('gui/theme.json', 'gui')]
 datas += collect_data_files('customtkinter')
 
-hiddenimports = collect_submodules('tkinterdnd2')
+dnd_datas, dnd_binaries, dnd_hiddenimports = collect_all('tkinterdnd2')
+datas += dnd_datas
+hiddenimports = dnd_hiddenimports
 
 a = Analysis(
     ['gui_app.py'],
     pathex=[],
-    binaries=[],
+    binaries=dnd_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
