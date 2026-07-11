@@ -1,4 +1,5 @@
 {
     "skip_first_part": false,
-    "output_file_name": "output.mp4"
+    "output_file_name": "__DIR_NAME__",
+    "reset_decryption_if_part_changed": true
 }

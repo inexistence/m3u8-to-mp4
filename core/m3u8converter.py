@@ -51,8 +51,9 @@ class SimpleM3U8TsParser:
     def __maybe_change_part(self, line: str):
         if line == KEY_DISCONTINUITY:
             self.current_part = self.current_part+1
+            # 切换标签以后要不要重置解密器
             # reset decryption
-            self.decryption = TsDecrypt()
+            # self.decryption = TsDecrypt()
             return
 
     def __maybe_change_method(self, line: str):
