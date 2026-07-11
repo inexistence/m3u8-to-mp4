@@ -15,6 +15,7 @@ KEY_BANDWIDTH='BANDWIDTH'
 KEY_RESOLUTION='RESOLUTION'
 
 KEY_DISCONTINUITY='#EXT-X-DISCONTINUITY'
+KEY_MEDIA_SEQUENCE='#EXT-X-MEDIA-SEQUENCE:'
 KEY_DECRYPT_KEY='#EXT-X-KEY:'
 KEY_METHOD='METHOD'
 KEY_URI='URI'
@@ -25,16 +26,18 @@ def parse_key_value(content: str, header: str) -> dict:
     res = {}
     arr = key_value_str.split(',')
     for entry in arr:
-        pair = entry.split('=')
+        # 只分割第一个 '='，避免 URI 等值中包含 '=' 时被截断
+        pair = entry.split('=', 1)
         key = pair[0]
-        value = pair[1]
-        res[key]=value
+        value = pair[1] if len(pair) > 1 else ''
+        res[key] = value
     return res
 
 class SimpleM3U8TsParser:
 
-    def __init__(self, index_file_path: str|Path, ts_merger: TsMerger):
+    def __init__(self, index_file_path: str|Path, ts_merger: TsMerger, aes_iv_mode: str = 'auto'):
         self.decryption = TsDecrypt()
+        self.aes_iv_mode = aes_iv_mode
 
         if isinstance(index_file_path, str):
             self.index_file_path = Path(index_file_path)
@@ -45,6 +48,11 @@ class SimpleM3U8TsParser:
         self.skip_first_part = False
         self.reset_decryption_if_part_changed = True
         self.current_part = 0
+        # media_sequence: m3u8 头部 #EXT-X-MEDIA-SEQUENCE 声明的起始序号
+        # segment_sequence: 当前处理到的分片序号，供标准 HLS IV 计算与自动检测使用
+        self.media_sequence = 0
+        self.segment_sequence: int | None = None
+        self._current_key_uri: str | None = None
 
     def set_skip_first_part(self, skip: bool):
         self.skip_first_part = skip
@@ -57,7 +65,20 @@ class SimpleM3U8TsParser:
             self.current_part = self.current_part+1
             if self.reset_decryption_if_part_changed:
                 self.decryption = TsDecrypt()
+                self._current_key_uri = None
+                self.__reset_decrypt_state()
             return
+
+    def __reset_decrypt_state(self):
+        if hasattr(self.decryption, 'reset_detect_mode'):
+            self.decryption.reset_detect_mode()
+
+    def __maybe_read_media_sequence(self, line: str):
+        if not line.startswith(KEY_MEDIA_SEQUENCE):
+            return
+        self.media_sequence = safe_int(line.split(':', 1)[1])
+        if self.segment_sequence is None:
+            self.segment_sequence = self.media_sequence
 
     def __maybe_change_method(self, line: str):
         if not line.startswith(KEY_DECRYPT_KEY):
@@ -68,23 +89,39 @@ class SimpleM3U8TsParser:
         iv = entry[KEY_IV] if KEY_IV in entry else None
         if method is not None and uri is not None:
             uri = uri.strip('"')
-            key_path = self.index_file_path.resolve().parent / Path(uri)
-            key = file.read(key_path)
-            self.decryption = get_decryption(method, key, iv)
+            if uri != self._current_key_uri:
+                key_path = self.index_file_path.resolve().parent / Path(uri)
+                key = file.read(key_path)
+                self.decryption = get_decryption(method, key, iv, iv_mode=self.aes_iv_mode)
+                self._current_key_uri = uri
+                if hasattr(self.decryption, 'set_key_start_sequence'):
+                    if self.segment_sequence is None:
+                        self.segment_sequence = self.media_sequence
+                    self.decryption.set_key_start_sequence(self.segment_sequence)
         else:
             self.decryption = TsDecrypt()
+            self._current_key_uri = None
 
     def __decrypt_and_merge_ts(self, line: str):
         if not line.endswith('.ts'):
             return
         ts_file = self.index_file_path.resolve().parent / Path(line)
-        data = None
-        with open(ts_file, 'rb') as file:
-            data = self.decryption.decrypt(file.read())
+        if self.segment_sequence is None:
+            self.segment_sequence = self.media_sequence
+
+        with open(ts_file, 'rb') as ts_file_handle:
+            raw = ts_file_handle.read()
+
+        # AES-128 解密需要分片序号以支持标准 HLS IV 及自动模式检测
+        if isinstance(self.decryption, TsDecrypt_AES128_CBC):
+            data = self.decryption.decrypt(raw, sequence_number=self.segment_sequence)
+        else:
+            data = self.decryption.decrypt(raw)
 
         if data is None:
             return
 
+        self.segment_sequence += 1
         self.ts_merger.append(data)
 
     def __handle_line(self, index: int, line: str):
@@ -98,9 +135,20 @@ class SimpleM3U8TsParser:
             if self.current_part != cur_part_tmp:
                 print('part 0 is skipped')
             return
+        self.__maybe_read_media_sequence(line)
         self.__maybe_change_method(line)
         self.__decrypt_and_merge_ts(line)
         self.__maybe_change_part(line)
+
+    def _count_ts_segments(self) -> int:
+        count = 0
+        def callback(index: int, line: str):
+            nonlocal count
+            line = line.strip() if line is not None else None
+            if line is not None and line.endswith('.ts'):
+                count += 1
+        file.read_lines(self.index_file_path, callback)
+        return count
 
     def merge(self):
         if self.skip_first_part == True:
@@ -110,6 +158,9 @@ class SimpleM3U8TsParser:
         # 写入二进制文件
         try:
             self.ts_merger.start()
+            total = self._count_ts_segments()
+            if total > 0:
+                self.ts_merger.set_progress_total(total)
             file.read_lines(self.index_file_path, self.__handle_line)
         finally:
             self.ts_merger.finish()
@@ -192,7 +243,7 @@ class M3U8Converter:
             out_put_file_name = out_put_file_name + '.mp4'
 
         merger = FfmpegMerger(self.dir / out_put_file_name)
-        ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger)
+        ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger, aes_iv_mode=self.config.aes_iv_mode)
         ts_parser.set_skip_first_part(self.config.skip_first_part)
         ts_parser.set_reset_decryption_if_part_changed(self.config.reset_decryption_if_part_changed)
         ts_parser.merge()

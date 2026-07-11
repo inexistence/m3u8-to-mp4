@@ -15,6 +15,7 @@ class GlobalConfig:
         self.skip_first_part: bool = get_value(dict=config, key='skip_first_part', default_value=False)
         self.output_file_name: str = get_value(dict=config, key='output_file_name', default_value='output.mp4')
         self.reset_decryption_if_part_changed: bool = get_value(dict=config, key='reset_decryption_if_part_changed', default_value=True)
+        self.aes_iv_mode: str = get_value(dict=config, key='aes_iv_mode', default_value='auto')
 
 def _load_yaml(path: Path) -> dict:
     content = file.read(path)

@@ -75,6 +75,12 @@ output_file_name: __DIR_NAME__
 
 # 遇到 #EXT-X-DISCONTINUITY 切换分段时，是否重置解密器
 reset_decryption_if_part_changed: true
+
+# AES-128 分片 IV 获取方式
+# - auto: 自动检测（默认）
+# - prepended: 分片前 16 字节密文作为 IV（常见于迅雷等下载器）
+# - hls: 标准 HLS，整段密文 + m3u8 声明 IV 或分片序号
+aes_iv_mode: auto
 ```
 
 如需本地覆盖配置且不希望提交到版本库，可在项目根目录创建 `local_config.yaml`，字段与 `config.yaml` 相同，同名项优先生效。

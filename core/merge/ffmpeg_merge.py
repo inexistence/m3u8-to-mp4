@@ -3,7 +3,7 @@ from core.merge.ts_merge import TsMerger
 from pathlib import Path
 import shutil
 import tempfile
-import uuid
+from tqdm import tqdm
 
 class FfmpegMerger(TsMerger):
 
@@ -13,25 +13,35 @@ class FfmpegMerger(TsMerger):
         else:
             self.target_file_path = target_file_path
         self.tmp_dir = None
-        self.list_file = None
+        self.merged_ts_path = None
+        self.merged_ts_file = None
+        self._pbar: tqdm | None = None
     
     def start(self):
         tmp_dir_name = tempfile.mkdtemp()
         self.tmp_dir = Path(tmp_dir_name)
-        self.list_file = open(self.tmp_dir / Path('file_list.txt'), 'w')
-        print('tmp dir', tmp_dir_name)
+        self.merged_ts_path = self.tmp_dir / 'merged.ts'
+        self.merged_ts_file = open(self.merged_ts_path, 'wb')
+        tqdm.write(f'tmp dir {tmp_dir_name}')
+
+    def set_progress_total(self, total: int):
+        self._pbar = tqdm(total=total, unit='seg', desc='merging', dynamic_ncols=True)
     
     def append(self, data: bytearray):
-        temp_file_path = self.tmp_dir / Path(str(uuid.uuid4()))
-        with open(temp_file_path, 'wb') as f:
-            f.write(data)
-        self.list_file.write(f"file '{temp_file_path}'\n")
+        self.merged_ts_file.write(data)
+        if self._pbar is not None:
+            self._pbar.update(1)
 
     def finish(self):
-        self.list_file.close()
+        if self._pbar is not None:
+            self._pbar.close()
+            self._pbar = None
+
+        self.merged_ts_file.close()
+        tqdm.write('converting to mp4...')
         try:
-            ffmpeg.input(self.list_file.name, format='concat', safe=0).output(str(self.target_file_path), c='copy').run()
-            print('merge success, output =', self.target_file_path)
+            # 进度条已关闭，可直接输出 ffmpeg 日志
+            ffmpeg.input(str(self.merged_ts_path)).output(str(self.target_file_path), c='copy').run()
+            tqdm.write(f'merge success, output = {self.target_file_path}')
         finally:
             shutil.rmtree(self.tmp_dir)
-            print('clean tmp dir', self.tmp_dir)
