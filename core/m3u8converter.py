@@ -8,6 +8,7 @@ from core.merge.ffmpeg_merge import FfmpegMerger
 from core.m3u8_stream import M3U8StreamInfoParser
 from core.m3u8_ts_parser import SimpleM3U8TsParser
 from core.utils.config import GlobalConfig
+from core.utils.output import resolve_unique_output_path
 
 
 class M3U8Converter:
@@ -49,10 +50,7 @@ class M3U8Converter:
         if out_put_file_name == '__DIR_NAME__':
             out_put_file_name = self.dir.name
 
-        if not out_put_file_name.endswith('.mp4'):
-            out_put_file_name = out_put_file_name + '.mp4'
-
-        output_path = self.dir / out_put_file_name
+        output_path = resolve_unique_output_path(self.dir, out_put_file_name, self.m3u8_index_file_path)
         print(f'output: {output_path}')
 
         merger = FfmpegMerger(output_path)
