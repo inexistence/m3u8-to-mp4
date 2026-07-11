@@ -42,6 +42,31 @@ pip install -r requirements.txt
 
 ## 使用方法
 
+### 桌面应用（Windows）
+
+安装依赖后，可直接启动 GUI：
+
+```shell
+python gui_app.py
+```
+
+或打包为独立 exe（双击运行，无需 Python 环境）：
+
+```shell
+.\build.bat
+```
+
+打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。将 exe 放到任意目录即可使用；如需覆盖默认配置，可在 exe 同目录放置 `local_config.yaml`。
+
+GUI 功能：
+
+- 拖放或浏览选择 `.m3u8` 文件 / 文件夹
+- 自动扫描入口索引，勾选需要转换的项目
+- 多码率主播放列表可在列表中为每个文件单独选择码率
+- 批量转换并显示进度与日志
+
+### 命令行
+
 将 `index.m3u8` 文件路径，或包含该文件的文件夹路径作为参数传入。输出 MP4 将生成在对应 `index.m3u8` 所在目录下。
 
 ```shell
@@ -99,14 +124,19 @@ stream_selection: highest_bandwidth
 ```
 m3u8-to-mp4/
 ├── main.py                 # 命令行入口
+├── gui_app.py              # 桌面应用入口
+├── build.bat               # Windows 一键打包脚本
+├── build.spec              # PyInstaller 配置
 ├── config.yaml             # 默认配置
 ├── core/
+│   ├── discovery.py        # m3u8 扫描与码率信息
 │   ├── m3u8converter.py    # 转换流程编排
 │   ├── m3u8_stream.py      # 主播放列表解析、流选择与过滤
 │   ├── m3u8_ts_parser.py   # 媒体播放列表解析、分片解密与合并
 │   ├── decrypt/            # ts 分片解密（AES-128）
 │   ├── merge/              # ts 合并（流式写入 + FFmpeg 封装）
 │   └── utils/              # 配置、文件读写等工具
+├── gui/                    # 桌面应用界面
 └── requirements.txt
 ```
 
@@ -114,6 +144,8 @@ m3u8-to-mp4/
 
 | 库 | 用途 |
 |---|---|
+| customtkinter | 桌面应用界面 |
+| tkinterdnd2 | 拖放文件/文件夹 |
 | ffmpeg-python | 调用 FFmpeg 合并 ts 分片 |
 | pycryptodome | AES-128 分片解密 |
 | PyYAML | 读取配置文件 |

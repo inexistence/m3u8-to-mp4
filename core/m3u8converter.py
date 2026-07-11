@@ -27,9 +27,19 @@ class M3U8Converter:
     def print_stream_info(self):
         self.m3u8_stream_info_parser.print_stream_info()
 
-    def convert(self):
+    def convert(self, stream_index: int | None = None):
         self.m3u8_stream_info_parser.parse()
-        ts_infos_index_file_path = self.m3u8_stream_info_parser.select_stream(self.config.stream_selection)
+        streams = self.m3u8_stream_info_parser.streams
+
+        if streams and stream_index is not None:
+            if 0 <= stream_index < len(streams):
+                ts_infos_index_file_path = streams[stream_index].index_file
+            else:
+                raise IndexError(f'stream_index {stream_index} out of range (0-{len(streams) - 1})')
+        elif streams:
+            ts_infos_index_file_path = self.m3u8_stream_info_parser.select_stream(self.config.stream_selection)
+        else:
+            ts_infos_index_file_path = None
 
         # 非主播放列表时 select_stream 返回 None，直接使用当前索引文件
         if ts_infos_index_file_path is None:
@@ -42,7 +52,10 @@ class M3U8Converter:
         if not out_put_file_name.endswith('.mp4'):
             out_put_file_name = out_put_file_name + '.mp4'
 
-        merger = FfmpegMerger(self.dir / out_put_file_name)
+        output_path = self.dir / out_put_file_name
+        print(f'output: {output_path}')
+
+        merger = FfmpegMerger(output_path)
         ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger, aes_iv_mode=self.config.aes_iv_mode)
         ts_parser.set_skip_first_part(self.config.skip_first_part)
         ts_parser.set_reset_decryption_if_part_changed(self.config.reset_decryption_if_part_changed)
