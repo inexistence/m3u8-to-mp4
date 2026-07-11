@@ -62,6 +62,7 @@ def ts_validity_score(data: bytes) -> int:
 
 
 class TsDecrypt_AES128_CBC(TsDecrypt):
+    """AES-128 CBC 解密，支持 prepended / hls 两种 IV 模式及自动检测。"""
     MODE_AUTO = 'auto'
     MODE_PREPENDED = 'prepended'  # 前 16 字节密文作为 IV
     MODE_HLS = 'hls'              # 标准 HLS：整段密文 + 序号/声明 IV

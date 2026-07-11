@@ -6,7 +6,7 @@
 
 - 合并本地 `.m3u8` 索引引用的 ts 分片，输出 MP4
 - 支持 `AES-128` 加密分片解密（需本地存在 key 文件）
-- 自动解析主播放列表（`#EXT-X-STREAM-INF`），定位实际 ts 索引文件
+- 自动解析主播放列表（`#EXT-X-STREAM-INF`），支持按带宽自动选流或交互式选择
 - 支持单文件或递归扫描目录下所有 `.m3u8` 文件
 - 通过 `config.yaml` 配置输出文件名、分段跳过等行为
 
@@ -53,7 +53,7 @@ python .\main.py "path\to\index.m3u8"
 python .\main.py "path\to\directory"
 ```
 
-传入目录时，会递归找出该目录树下全部的 `.m3u8` 文件（包括当前目录与子目录中的多个文件），按路径排序后依次处理。
+传入目录时，会递归找出该目录树下全部的 `.m3u8` 文件，并自动跳过被主播放列表引用的子码率索引（如 `720p/index.m3u8`），避免重复转换。按路径排序后依次处理入口文件。
 
 ### 输入要求
 
@@ -81,6 +81,15 @@ reset_decryption_if_part_changed: true
 # - prepended: 分片前 16 字节密文作为 IV（常见于迅雷等下载器）
 # - hls: 标准 HLS，整段密文 + m3u8 声明 IV 或分片序号
 aes_iv_mode: auto
+
+# 主播放列表（多码率）流选择策略
+# - highest_bandwidth: 选带宽最高的（默认）
+# - lowest_bandwidth: 选带宽最低的
+# - first: 选第一个
+# - interactive: 扫描所有流并让用户交互选择
+# - resolution:1280x720: 匹配指定分辨率
+# - index:0: 按序号选择（从 0 开始）
+stream_selection: highest_bandwidth
 ```
 
 如需本地覆盖配置且不希望提交到版本库，可在项目根目录创建 `local_config.yaml`，字段与 `config.yaml` 相同，同名项优先生效。
@@ -92,9 +101,11 @@ m3u8-to-mp4/
 ├── main.py                 # 命令行入口
 ├── config.yaml             # 默认配置
 ├── core/
-│   ├── m3u8converter.py    # m3u8 解析与转换流程
+│   ├── m3u8converter.py    # 转换流程编排
+│   ├── m3u8_stream.py      # 主播放列表解析、流选择与过滤
+│   ├── m3u8_ts_parser.py   # 媒体播放列表解析、分片解密与合并
 │   ├── decrypt/            # ts 分片解密（AES-128）
-│   ├── merge/              # ts 合并（FFmpeg concat）
+│   ├── merge/              # ts 合并（流式写入 + FFmpeg 封装）
 │   └── utils/              # 配置、文件读写等工具
 └── requirements.txt
 ```

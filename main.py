@@ -1,4 +1,5 @@
 from core.m3u8converter import M3U8Converter
+from core.m3u8_stream import filter_entry_point_m3u8
 import argparse
 from core.utils.config import (get_global_config, GlobalConfig)
 import os
@@ -10,7 +11,8 @@ def handle_file(index_file_path: str|Path, config: GlobalConfig):
     converter.convert()
 
 def search_indexs(directory: Path) -> list[Path]:
-    return sorted(directory.rglob('*.m3u8'))
+    all_m3u8 = sorted(directory.rglob('*.m3u8'))
+    return filter_entry_point_m3u8(all_m3u8)
 
 
 def main(path_name: Path):

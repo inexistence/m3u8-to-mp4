@@ -14,3 +14,12 @@ reset_decryption_if_part_changed: true
 # - prepended: 分片前 16 字节密文作为 IV（常见于迅雷等下载器）
 # - hls: 标准 HLS，整段密文 + m3u8 声明 IV 或分片序号
 aes_iv_mode: auto
+
+# 主播放列表（多码率）流选择策略
+# - highest_bandwidth: 选带宽最高的（默认）
+# - lowest_bandwidth: 选带宽最低的
+# - first: 选第一个
+# - interactive: 扫描所有流并让用户交互选择
+# - resolution:1280x720: 匹配指定分辨率
+# - index:0: 按序号选择（从 0 开始）
+stream_selection: highest_bandwidth
