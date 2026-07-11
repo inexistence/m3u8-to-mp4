@@ -31,6 +31,8 @@ def main(path_name: Path):
         # TODO multi thread
         for file in index_files:
             handle_file(index_file_path=file, config=config)
+    else:
+        raise TypeError('not file nor dir')
 
 if __name__ =='__main__':
     parser = argparse.ArgumentParser()
