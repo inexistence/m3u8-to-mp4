@@ -1,12 +1,14 @@
 """媒体播放列表解析：读取 .ts 分片、解密并写入合并器。"""
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
+import threading
 
 import core.utils.file as file
 from core.decrypt import get_decryption
 from core.decrypt.ts_decrypt import TsDecrypt
 from core.decrypt.ts_decrypt_aes_128 import TsDecrypt_AES128_CBC
 from core.merge.ts_merge import TsMerger
+from core.utils.cancellation import ConversionCancelled
 from core.utils.value import safe_int
 
 KEY_DISCONTINUITY = '#EXT-X-DISCONTINUITY'
@@ -37,9 +39,16 @@ class SimpleM3U8TsParser:
 
     处理 #EXT-X-KEY 解密、#EXT-X-DISCONTINUITY 分段、#EXT-X-MEDIA-SEQUENCE 序号等标签。
     """
-    def __init__(self, index_file_path: str | Path, ts_merger: TsMerger, aes_iv_mode: str = 'auto'):
+    def __init__(
+        self,
+        index_file_path: str | Path,
+        ts_merger: TsMerger,
+        aes_iv_mode: str = 'auto',
+        cancel_event: threading.Event | None = None,
+    ):
         self.decryption = TsDecrypt()
         self.aes_iv_mode = aes_iv_mode
+        self._cancel_event = cancel_event
 
         if isinstance(index_file_path, str):
             self.index_file_path = Path(index_file_path)
@@ -55,6 +64,10 @@ class SimpleM3U8TsParser:
         self.media_sequence = 0
         self.segment_sequence: int | None = None
         self._current_key_uri: str | None = None
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            raise ConversionCancelled()
 
     def set_skip_first_part(self, skip: bool):
         self.skip_first_part = skip
@@ -134,6 +147,7 @@ class SimpleM3U8TsParser:
     def __decrypt_and_merge_ts(self, line: str):
         if not line.endswith('.ts'):
             return
+        self._raise_if_cancelled()
         ts_file = self.index_file_path.resolve().parent / Path(line)
         if self.segment_sequence is None:
             self.segment_sequence = self.media_sequence
