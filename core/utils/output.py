@@ -21,9 +21,14 @@ def resolve_output_directory(output_directory: str | Path | None, source_directo
 def resolve_unique_output_path(output_dir: Path, base_name: str, source_m3u8: Path) -> Path:
     """在同目录下选择不冲突的 MP4 输出路径。
 
+    进程内线程安全：通过模块级锁串行化路径分配，避免并行转换竞态。
+
+    命名策略：
     1. 优先使用 base_name（单文件时保持 __DIR_NAME__ / 固定名行为）
     2. 冲突时追加 m3u8 文件名：video_720p.mp4
     3. 仍冲突则追加序号：video_720p_2.mp4
+
+    选定路径后立即 ``touch()`` 占位，供后续并发调用识别为已占用。
     """
     if not base_name.lower().endswith('.mp4'):
         base_name = f'{base_name}.mp4'
