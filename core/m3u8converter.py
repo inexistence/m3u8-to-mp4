@@ -2,6 +2,7 @@
 
 负责串联主播放列表选流、媒体播放列表解析、分片合并等步骤，本身不直接解析 m3u8 内容。
 """
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -34,6 +35,7 @@ class M3U8Converter:
         self,
         stream_index: int | None = None,
         progress_callback: Callable[[str, int, int | None], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         output_directory = resolve_output_directory(self.config.output_directory, self.dir)
         ensure_ffmpeg()
@@ -61,8 +63,13 @@ class M3U8Converter:
         output_path = resolve_unique_output_path(output_directory, out_put_file_name, self.m3u8_index_file_path)
         print(f'output: {output_path}')
 
-        merger = FfmpegMerger(output_path, progress_callback=progress_callback)
-        ts_parser = SimpleM3U8TsParser(ts_infos_index_file_path, merger, aes_iv_mode=self.config.aes_iv_mode)
+        merger = FfmpegMerger(output_path, progress_callback=progress_callback, cancel_event=cancel_event)
+        ts_parser = SimpleM3U8TsParser(
+            ts_infos_index_file_path,
+            merger,
+            aes_iv_mode=self.config.aes_iv_mode,
+            cancel_event=cancel_event,
+        )
         merger.set_media_duration_ms(ts_parser.get_total_duration_ms())
         ts_parser.set_skip_first_part(self.config.skip_first_part)
         ts_parser.set_reset_decryption_if_part_changed(self.config.reset_decryption_if_part_changed)
