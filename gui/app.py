@@ -183,6 +183,7 @@ class M3u8GuiApp(TkinterDnD.Tk):
             on_clear_tasks=self.clear_tasks,
             on_start_conversion=self.start_conversion,
             on_cancel_conversion=self.cancel_conversion,
+            on_cancel_task=self._cancel_task,
             on_copy_error=self._copy_error_details,
         )
         self.task_list.grid(row=0, column=0, sticky='nsew', padx=t.SPACE_MD, pady=t.SPACE_MD)
@@ -354,6 +355,7 @@ class M3u8GuiApp(TkinterDnD.Tk):
                 task.error_message = ''
         self.task_list.refresh_rows()
         self._active_batch = tuple(selected_tasks)
+        self.task_list.set_cancellable_tasks(self._active_batch)
 
         self.global_config.reload_from_disk()
         self.task_list.set_output_directory(self.global_config.output_directory)
@@ -378,6 +380,15 @@ class M3u8GuiApp(TkinterDnD.Tk):
         self._cancel_requested = True
         self.worker.cancel()
         self.task_list.cancel_btn.configure(state='disabled', text='正在取消…')
+
+    def _cancel_task(self, task: ConversionTask) -> None:
+        if not self.is_converting or self.worker is None:
+            return
+        try:
+            index = self._active_batch.index(task)
+        except ValueError:
+            return
+        self.worker.cancel_task(index)
 
     def _on_worker_event(self, event: WorkerEvent) -> None:
         self.after(0, lambda: self._handle_worker_event(event))
@@ -432,7 +443,8 @@ class M3u8GuiApp(TkinterDnD.Tk):
         was_cancelled = self._cancel_requested
         self.is_converting = False
         self._cancel_requested = False
-        self.task_list.cancel_btn.configure(state='normal', text='取消')
+        self.task_list.cancel_btn.configure(state='normal', text='取消全部')
+        self.task_list.set_cancellable_tasks(())
         self._sync_queue_actions()
         self.task_list.set_clear_enabled(True)
         self.settings_btn.configure(state='normal')

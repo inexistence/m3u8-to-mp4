@@ -131,6 +131,8 @@ class TaskRow(ctk.CTkFrame):
         on_stream_changed: Callable[[], None],
         on_copy_error: Callable[[ConversionTask], None] | None,
         on_view_error_log: Callable[[ConversionTask], None] | None = None,
+        on_cancel_task: Callable[[ConversionTask], None] | None = None,
+        batch_converting: bool = False,
         **kwargs,
     ):
         super().__init__(master, corner_radius=t.RADIUS_SM, border_width=1, **kwargs)
@@ -138,6 +140,8 @@ class TaskRow(ctk.CTkFrame):
         self.on_selection_changed = on_selection_changed
         self.on_stream_changed = on_stream_changed
         self.on_copy_error = on_copy_error
+        self.on_cancel_task = on_cancel_task
+        self._batch_converting = batch_converting
 
         self.grid_columnconfigure(1, weight=1)
 
@@ -193,10 +197,17 @@ class TaskRow(ctk.CTkFrame):
             height=24,
         )
         self.status_badge.grid(row=0, column=2, rowspan=2, padx=t.SPACE_MD, pady=t.SPACE_MD, sticky='e')
+        self.cancel_task_btn = t.style_danger_button(
+            ctk.CTkButton(self, text='取消', command=self._cancel_task),
+            width=56,
+        )
+        self.cancel_task_btn.configure(height=24, font=t.font_caption())
+        self.cancel_task_btn.grid(row=0, column=3, rowspan=2, padx=(0, t.SPACE_MD), pady=t.SPACE_MD, sticky='e')
+        self.cancel_task_btn.grid_remove()
 
         if task.is_master_playlist:
             stream_row = ctk.CTkFrame(self, fg_color='transparent')
-            stream_row.grid(row=3, column=0, columnspan=3, sticky='ew', padx=t.SPACE_MD, pady=(0, t.SPACE_MD))
+            stream_row.grid(row=3, column=0, columnspan=4, sticky='ew', padx=t.SPACE_MD, pady=(0, t.SPACE_MD))
             stream_row.grid_columnconfigure(1, weight=1)
 
             ctk.CTkLabel(
@@ -293,7 +304,7 @@ class TaskRow(ctk.CTkFrame):
             padx=t.SPACE_SM,
             pady=(0, t.SPACE_SM),
         )
-        self.error_frame.grid(row=4, column=0, columnspan=3, sticky='ew', padx=t.SPACE_MD, pady=(0, t.SPACE_MD))
+        self.error_frame.grid(row=4, column=0, columnspan=4, sticky='ew', padx=t.SPACE_MD, pady=(0, t.SPACE_MD))
         self.error_frame.grid_remove()
 
         self.refresh_status()
@@ -329,6 +340,7 @@ class TaskRow(ctk.CTkFrame):
             self.progress.stop()
             self.progress.grid()
             self.progress_frame.grid_remove()
+        self._refresh_cancel_visibility()
 
     def set_progress(self, phase: str, message: str, percent: int | None) -> None:
         """仅由主线程调用，以当前真实阶段更新唯一进度条。"""
@@ -348,6 +360,10 @@ class TaskRow(ctk.CTkFrame):
     def _copy_error(self) -> None:
         if self.on_copy_error is not None:
             self.on_copy_error(self.task)
+
+    def _cancel_task(self) -> None:
+        if self.on_cancel_task is not None:
+            self.on_cancel_task(self.task)
 
     def _copy_path(self, _event=None) -> None:
         """点击中间截断的路径即可复制完整路径。"""
@@ -371,6 +387,23 @@ class TaskRow(ctk.CTkFrame):
         self.checkbox.configure(state=state)
         if hasattr(self, 'stream_menu'):
             self.stream_menu.configure(state=state)
+        self._refresh_cancel_visibility()
+
+    def set_batch_converting(self, is_converting: bool) -> None:
+        self._batch_converting = is_converting
+        self._refresh_cancel_visibility()
+
+    def _refresh_cancel_visibility(self) -> None:
+        visible = (
+            self._batch_converting
+            and self.on_cancel_task is not None
+            and self.task.status in {TaskStatus.PENDING, TaskStatus.RUNNING}
+        )
+        if visible:
+            self.cancel_task_btn.configure(state='normal')
+            self.cancel_task_btn.grid()
+        else:
+            self.cancel_task_btn.grid_remove()
 
     def focus_error(self) -> None:
         """以键盘焦点和边框提示当前失败任务。"""
@@ -396,6 +429,7 @@ class TaskList(ctk.CTkFrame):
         on_clear_tasks: Callable[[], None] | None = None,
         on_start_conversion: Callable[[], None] | None = None,
         on_cancel_conversion: Callable[[], None] | None = None,
+        on_cancel_task: Callable[[ConversionTask], None] | None = None,
         on_copy_error: Callable[[ConversionTask], None] | None = None,
         on_view_error_log: Callable[[ConversionTask], None] | None = None,
         **kwargs,
@@ -408,9 +442,11 @@ class TaskList(ctk.CTkFrame):
         self.on_open_output_directory = on_open_output_directory
         self.on_copy_error = on_copy_error
         self.on_view_error_log = on_view_error_log
+        self.on_cancel_task = on_cancel_task
         self.tasks: list[ConversionTask] = []
         self.rows: list[TaskRow] = []
         self._is_converting = False
+        self._cancellable_task_ids: set[int] = set()
         self._interactive = True
         self._clear_allowed = True
 
@@ -501,7 +537,7 @@ class TaskList(ctk.CTkFrame):
         )
         self.start_btn.pack(side='right')
         self.cancel_btn = t.style_danger_button(
-            ctk.CTkButton(toolbar, text='取消', command=on_cancel_conversion or (lambda: None)),
+            ctk.CTkButton(toolbar, text='取消全部', command=on_cancel_conversion or (lambda: None)),
             width=88,
         )
         self.cancel_btn.pack(side='right')
@@ -550,6 +586,8 @@ class TaskList(ctk.CTkFrame):
                 on_stream_changed=self._update_summary,
                 on_copy_error=self.on_copy_error,
                 on_view_error_log=self.on_view_error_log,
+                on_cancel_task=self.on_cancel_task,
+                batch_converting=self._is_row_cancellable(task),
             )
             row.pack(fill='x', pady=(0, t.SPACE_SM))
             self.rows.append(row)
@@ -626,6 +664,7 @@ class TaskList(ctk.CTkFrame):
     def refresh_rows(self) -> None:
         for row in self.rows:
             row.refresh_status()
+            row.set_batch_converting(self._is_row_cancellable(row.task))
         self.after_idle(self._update_scrollbar_visibility)
 
     def set_task_progress(self, task_index: int, phase: str, message: str, percent: int | None) -> None:
@@ -702,10 +741,20 @@ class TaskList(ctk.CTkFrame):
 
     def set_converting(self, is_converting: bool) -> None:
         self._is_converting = is_converting
+        for row in self.rows:
+            row.set_batch_converting(self._is_row_cancellable(row.task))
         self._apply_action_state()
+
+    def set_cancellable_tasks(self, tasks: tuple[ConversionTask, ...]) -> None:
+        self._cancellable_task_ids = {id(task) for task in tasks}
+        for row in self.rows:
+            row.set_batch_converting(self._is_row_cancellable(row.task))
 
     def update_action_state(self) -> None:
         self._apply_action_state()
+
+    def _is_row_cancellable(self, task: ConversionTask) -> bool:
+        return self._is_converting and id(task) in self._cancellable_task_ids
 
     def _apply_action_state(self) -> None:
         state = queue_action_state(
