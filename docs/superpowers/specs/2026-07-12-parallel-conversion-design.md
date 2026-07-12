@@ -93,7 +93,7 @@ BatchCancelController
 - 本批内状态为 `PENDING` 或 `RUNNING` 时显示行内「取消」
 - 点击 → `worker.cancel_task(batch_index)`（或等价 API）
 - `DONE` / `ERROR` / `SKIPPED` 不显示或不启用行内取消
-- 工具栏全局「取消」保留；文案「正在取消…」仅用于全局取消
+- 工具栏全局取消保留，文案改为 **「取消全部」**（进行中可变为「正在取消…」），明确表示取消当前冻结批次，而非勾选项；与行内「取消」区分
 
 **进度**
 
