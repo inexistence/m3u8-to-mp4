@@ -1,8 +1,10 @@
 from core.m3u8converter import M3U8Converter
-from core.discovery import find_entry_m3u8
+from core.batch_convert import BatchCancelController, BatchCallbacks, run_batch_conversions
+from core.discovery import find_entry_m3u8, M3u8Entry
 import argparse
 from core.utils.config import (get_global_config, GlobalConfig)
 from core.utils.ffmpeg_check import ensure_ffmpeg, ffmpeg_missing_message
+from gui.models import ConversionTask
 import os
 import sys
 from pathlib import Path
@@ -30,9 +32,29 @@ def main(path_name: Path):
             print('no .m3u8 files found in', path_name)
             return
         print(f'found {len(index_files)} .m3u8 file(s)')
-        # TODO multi thread
-        for file in index_files:
-            handle_file(index_file_path=file, config=config)
+        tasks = [ConversionTask(entry=M3u8Entry(path=p)) for p in index_files]
+        cancel = BatchCancelController.for_tasks(len(tasks))
+
+        def on_started(index, task):
+            print(f'[{index + 1}/{len(tasks)}] start', task.path)
+
+        def on_done(index, task):
+            print(f'[{index + 1}/{len(tasks)}] done', task.path)
+
+        def on_error(index, task, exc):
+            print(f'[{index + 1}/{len(tasks)}] fail', task.path, exc)
+
+        done = run_batch_conversions(
+            tasks,
+            config,
+            cancel=cancel,
+            callbacks=BatchCallbacks(
+                on_task_started=on_started,
+                on_task_done=on_done,
+                on_task_error=on_error,
+            ),
+        )
+        print(f'finished {done}/{len(tasks)}')
     else:
         raise TypeError('not file nor dir')
 
