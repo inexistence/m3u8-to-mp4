@@ -1,5 +1,8 @@
 """输出文件路径解析。"""
+import threading
 from pathlib import Path
+
+_output_path_lock = threading.Lock()
 
 
 def resolve_output_directory(output_directory: str | Path | None, source_directory: Path) -> Path:
@@ -33,14 +36,17 @@ def resolve_unique_output_path(output_dir: Path, base_name: str, source_m3u8: Pa
     if source_stem != name_stem:
         candidates.append(output_dir / f'{name_stem}_{source_stem}.mp4')
 
-    for path in candidates:
-        if not path.exists():
-            return path
+    with _output_path_lock:
+        for path in candidates:
+            if not path.exists():
+                path.touch()
+                return path
 
-    prefix = f'{name_stem}_{source_stem}' if source_stem != name_stem else name_stem
-    for i in range(2, 10000):
-        path = output_dir / f'{prefix}_{i}.mp4'
-        if not path.exists():
-            return path
+        prefix = f'{name_stem}_{source_stem}' if source_stem != name_stem else name_stem
+        for i in range(2, 10000):
+            path = output_dir / f'{prefix}_{i}.mp4'
+            if not path.exists():
+                path.touch()
+                return path
 
-    raise RuntimeError(f'无法为 {base_name} 找到可用输出文件名')
+        raise RuntimeError(f'无法为 {base_name} 找到可用输出文件名')
