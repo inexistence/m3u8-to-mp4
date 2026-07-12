@@ -7,7 +7,7 @@ from typing import Callable
 import customtkinter as ctk
 from tkinter import messagebox
 
-from core.utils.config import GlobalConfig, save_local_config
+from core.utils.config import GlobalConfig, save_local_config, normalize_max_parallel_conversions
 from gui import theme as t
 
 OUTPUT_DIR_NAME = '__DIR_NAME__'
@@ -30,7 +30,7 @@ class SettingsDialog(tk.Toplevel):
         self.on_saved = on_saved
 
         self.title('转换设置')
-        self.geometry('560x620')
+        self.geometry('560x700')
         self.resizable(False, False)
         self.transient(master)
         self._appearance_mode = ctk.get_appearance_mode()
@@ -197,6 +197,19 @@ class SettingsDialog(tk.Toplevel):
             font=t.font_body(),
         ).pack(anchor='w', padx=t.SPACE_MD, pady=(t.SPACE_SM, t.SPACE_MD))
 
+        parallel_group = self._add_section(
+            body,
+            '同时转换数',
+            '批量转换时最多同时进行的任务数。数值越大通常越快，但也更占磁盘与 CPU。',
+        )
+        self.parallel_menu = ctk.CTkOptionMenu(
+            parallel_group,
+            values=[str(i) for i in range(1, 9)],
+            height=32,
+            font=t.font_body(),
+        )
+        self.parallel_menu.pack(fill='x', padx=t.SPACE_MD, pady=(t.SPACE_XS, t.SPACE_MD))
+
         self.save_feedback = ctk.CTkLabel(
             self.container,
             text='',
@@ -257,6 +270,7 @@ class SettingsDialog(tk.Toplevel):
         self.aes_iv_menu.set(AES_IV_LABELS.get(self.global_config.aes_iv_mode, '自动检测（推荐）'))
         self.skip_first_part_var.set(self.global_config.skip_first_part)
         self.reset_decrypt_var.set(self.global_config.reset_decryption_if_part_changed)
+        self.parallel_menu.set(str(self.global_config.max_parallel_conversions))
         self._update_output_mode()
 
     def _update_output_mode(self) -> None:
@@ -303,6 +317,9 @@ class SettingsDialog(tk.Toplevel):
         self.global_config.aes_iv_mode = aes_mode
         self.global_config.skip_first_part = self.skip_first_part_var.get()
         self.global_config.reset_decryption_if_part_changed = self.reset_decrypt_var.get()
+        self.global_config.max_parallel_conversions = normalize_max_parallel_conversions(
+            self.parallel_menu.get()
+        )
 
         try:
             save_local_config(self.global_config)
