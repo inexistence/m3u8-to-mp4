@@ -24,6 +24,20 @@ def _bundled_config_path() -> Path:
 CONFIG_FILE = _bundled_config_path()
 LOCAL_CONFIG_FILE = _app_root() / 'local_config.yaml'
 
+
+def normalize_max_parallel_conversions(value: object) -> int:
+    """规范并发数：非法/缺失 → 2；小于 1 → 2；大于 8 → 8。"""
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 2
+    if n < 1:
+        return 2
+    if n > 8:
+        return 8
+    return n
+
+
 class GlobalConfig:
     """从 config.yaml / local_config.yaml 加载的运行时配置。"""
     def __init__(self, config: dict):
@@ -35,6 +49,9 @@ class GlobalConfig:
         self.reset_decryption_if_part_changed: bool = get_value(dict=config, key='reset_decryption_if_part_changed', default_value=True)
         self.aes_iv_mode: str = get_value(dict=config, key='aes_iv_mode', default_value='auto')
         self.stream_selection: str = get_value(dict=config, key='stream_selection', default_value='highest_bandwidth')
+        self.max_parallel_conversions: int = normalize_max_parallel_conversions(
+            get_value(dict=config, key='max_parallel_conversions', default_value=2)
+        )
 
     @staticmethod
     def _normalize_output_directory(value: object) -> str | None:
@@ -50,6 +67,7 @@ class GlobalConfig:
             'output_directory': self.output_directory,
             'reset_decryption_if_part_changed': self.reset_decryption_if_part_changed,
             'aes_iv_mode': self.aes_iv_mode,
+            'max_parallel_conversions': self.max_parallel_conversions,
         }
 
     def apply_local_dict(self, data: dict) -> None:
@@ -63,6 +81,8 @@ class GlobalConfig:
             self.reset_decryption_if_part_changed = bool(data['reset_decryption_if_part_changed'])
         if 'aes_iv_mode' in data:
             self.aes_iv_mode = str(data['aes_iv_mode'])
+        if 'max_parallel_conversions' in data:
+            self.max_parallel_conversions = normalize_max_parallel_conversions(data['max_parallel_conversions'])
 
     def reload_from_disk(self) -> None:
         """从 config.yaml / local_config.yaml 重新加载，覆盖当前内存值。"""
@@ -73,6 +93,7 @@ class GlobalConfig:
         self.reset_decryption_if_part_changed = fresh.reset_decryption_if_part_changed
         self.aes_iv_mode = fresh.aes_iv_mode
         self.stream_selection = fresh.stream_selection
+        self.max_parallel_conversions = fresh.max_parallel_conversions
 
 def _load_yaml(path: Path) -> dict:
     content = file.read(path)

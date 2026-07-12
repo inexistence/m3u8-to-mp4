@@ -28,3 +28,7 @@ aes_iv_mode: auto
 # - resolution:1280x720: 匹配指定分辨率
 # - index:0: 按序号选择（从 0 开始）
 stream_selection: highest_bandwidth
+
+# 同时转换的最大任务数（GUI / CLI 批量）
+# 取值 1–8；默认 2
+max_parallel_conversions: 2
