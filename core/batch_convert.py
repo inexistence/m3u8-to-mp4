@@ -15,10 +15,6 @@ from core.utils.config import GlobalConfig, normalize_max_parallel_conversions
 from gui.models import ConversionTask, TaskStatus
 
 
-ProgressCallback = Callable[[str, int, int | None], None]
-EventCallback = Callable[[str], None]
-
-
 @dataclass
 class BatchCancelController:
     batch_cancel: threading.Event = field(default_factory=threading.Event)
@@ -60,10 +56,9 @@ def run_batch_conversions(
 ) -> int:
     """并行转换；返回成功完成的任务数。"""
     callbacks = callbacks or BatchCallbacks()
-    total = len(tasks)
-    if total == 0:
+    if len(tasks) == 0:
         return 0
-    if len(cancel.task_cancels) != total:
+    if len(cancel.task_cancels) != len(tasks):
         raise ValueError('cancel.task_cancels length must match tasks')
 
     workers = resolve_worker_count(config)

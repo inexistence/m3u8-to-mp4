@@ -91,6 +91,39 @@ class BatchConvertTests(unittest.TestCase):
         self.assertEqual(tasks[1].status, TaskStatus.SKIPPED)
         self.assertEqual(len(calls), 1)
 
+    def test_cancel_running_task_only_affects_that_task(self) -> None:
+        tasks = [_task('a.m3u8'), _task('b.m3u8')]
+        config = MagicMock(spec=GlobalConfig)
+        config.max_parallel_conversions = 2
+        cancel = BatchCancelController.for_tasks(len(tasks))
+        started = [threading.Event(), threading.Event()]
+
+        def fake_convert(*, stream_index=None, progress_callback=None, cancel_event=None):
+            if cancel_event is cancel.task_cancels[0]:
+                started[0].set()
+                started[1].wait(timeout=2)
+                while not cancel_event.is_set():
+                    time.sleep(0.01)
+                raise ConversionCancelled()
+            started[1].set()
+            started[0].wait(timeout=2)
+            time.sleep(0.02)
+
+        def trigger():
+            started[0].wait(timeout=2)
+            started[1].wait(timeout=2)
+            cancel.cancel_task(0)
+
+        with patch('core.batch_convert.M3U8Converter') as cls:
+            cls.return_value.convert.side_effect = fake_convert
+            threading.Thread(target=trigger, daemon=True).start()
+            done = run_batch_conversions(tasks, config, cancel=cancel)
+
+        self.assertEqual(done, 1)
+        self.assertEqual(tasks[0].status, TaskStatus.ERROR)
+        self.assertEqual(tasks[0].error_message, '用户取消')
+        self.assertEqual(tasks[1].status, TaskStatus.DONE)
+
 
 if __name__ == '__main__':
     unittest.main()
