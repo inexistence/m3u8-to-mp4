@@ -42,6 +42,12 @@ class WorkerCancelTests(unittest.TestCase):
         self.assertIn('task_error', kinds)
         self.assertIn('finished', kinds)
 
+        task_error = next(e for e in events if e.kind == 'task_error')
+        finished = next(e for e in events if e.kind == 'finished')
+        self.assertEqual(task_error.done_count, 0)
+        self.assertEqual(finished.done_count, 0)
+        self.assertNotIn('task_done', kinds)
+
         self.assertEqual(len(seen_cancel_event), 1)
         self.assertIs(seen_cancel_event[0], worker._cancel)
         converter_cls.return_value.convert.assert_called_once()
