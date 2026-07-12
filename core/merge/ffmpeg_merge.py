@@ -119,16 +119,32 @@ class FfmpegMerger(TsMerger):
             text=True,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
-        assert process.stdout is not None
-        for line in process.stdout:
-            out_time_us = parse_ffmpeg_progress_line(line)
-            if out_time_us is not None:
-                self._report_packaging_progress(out_time_us)
-        returncode = process.wait()
-        if returncode:
-            raise subprocess.CalledProcessError(returncode, command)
-        if self._media_duration_ms is not None:
-            self._report_packaging_progress(self._media_duration_ms * 1000)
+        self._process = process
+        try:
+            assert process.stdout is not None
+            for line in process.stdout:
+                self._raise_if_cancelled()
+                out_time_us = parse_ffmpeg_progress_line(line)
+                if out_time_us is not None:
+                    self._report_packaging_progress(out_time_us)
+            self._raise_if_cancelled()
+            returncode = process.wait()
+            if returncode:
+                raise subprocess.CalledProcessError(returncode, command)
+            if self._media_duration_ms is not None:
+                self._report_packaging_progress(self._media_duration_ms * 1000)
+        except ConversionCancelled:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            self._remove_incomplete_output()
+            raise
+        finally:
+            self._process = None
 
     def finish(self):
         if self._pbar is not None:
