@@ -10,6 +10,8 @@ from typing import Callable
 
 from tqdm import tqdm
 
+from core.utils.ffmpeg_check import ensure_ffmpeg
+
 
 def parse_ffmpeg_progress_line(line: str) -> int | None:
     """从 FFmpeg machine-readable progress 输出中取出 out_time_ms。"""
@@ -88,6 +90,7 @@ class FfmpegMerger(TsMerger):
         self._report_packaging_progress()
         process = subprocess.Popen(
             command,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
@@ -115,11 +118,13 @@ class FfmpegMerger(TsMerger):
             if self._can_report_progress():
                 tqdm.write('converting to mp4...')
             try:
-                stream = ffmpeg.input(str(self.merged_ts_path)).output(
-                    str(self.target_file_path),
-                    c='copy',
-                ).global_args('-progress', 'pipe:1', '-nostats')
-                command = stream.compile()
+                stream = (
+                    ffmpeg.input(str(self.merged_ts_path))
+                    .output(str(self.target_file_path), c='copy')
+                    .global_args('-progress', 'pipe:1', '-nostats')
+                    .overwrite_output()
+                )
+                command = stream.compile(cmd=ensure_ffmpeg())
                 self._run_ffmpeg(command)
                 if self._can_report_progress():
                     tqdm.write(f'merge success, output = {self.target_file_path}')

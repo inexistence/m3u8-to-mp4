@@ -10,7 +10,7 @@ from tkinterdnd2 import TkinterDnD
 
 from core.discovery import M3u8Entry, find_entry_m3u8_from_paths
 from core.utils.config import get_global_config, save_local_config
-from core.utils.ffmpeg_check import find_ffmpeg, ffmpeg_missing_message
+from core.utils.ffmpeg_check import find_ffmpeg, ffmpeg_missing_message, describe_ffmpeg_status
 from gui import theme as t
 from gui.settings_dialog import SettingsDialog
 from gui.models import ConversionTask, TaskStatus
@@ -154,9 +154,9 @@ class M3u8GuiApp(TkinterDnD.Tk):
         self.settings_btn.grid(row=0, column=2, sticky='e', padx=t.SPACE_MD, pady=t.SPACE_MD)
 
     def _refresh_ffmpeg_status(self) -> None:
-        available = find_ffmpeg() is not None
+        available, label = describe_ffmpeg_status()
         self.ffmpeg_status.configure(
-            text='● FFmpeg 已就绪' if available else '● 未找到 FFmpeg',
+            text=label,
             fg_color=t.ACCENT_MUTED if available else t.STATUS_META['error']['background'],
             text_color=t.ACCENT if available else t.ERROR,
         )
@@ -228,10 +228,9 @@ class M3u8GuiApp(TkinterDnD.Tk):
             initialdir=self.global_config.output_directory or None,
             parent=self,
         )
-        if directory:
-            self._set_output_directory(directory)
-        else:
-            self._set_output_directory(None)
+        if not directory:
+            return
+        self._set_output_directory(directory)
 
     def _open_output_directory(self) -> None:
         output_directory = self.global_config.output_directory

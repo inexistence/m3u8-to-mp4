@@ -14,7 +14,8 @@
 ## 环境要求
 
 - Python 3.10+
-- [FFmpeg](https://ffmpeg.org/download.html)（需已安装并将 `bin` 目录加入系统 `PATH`）
+- [FFmpeg](https://ffmpeg.org/download.html)：通过 `imageio-ffmpeg` 自动提供（源码运行与发行版 exe 均适用）；也可自行安装并加入系统 `PATH`
+- 发行版 `m3u8-to-mp4.exe` 会打包 `imageio-ffmpeg` 及其自带 FFmpeg，无需用户额外下载
 
 ## 安装
 
@@ -57,7 +58,7 @@ python gui_app.py
 .\build.bat
 ```
 
-打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。将 exe 放到任意目录即可使用；如需覆盖默认配置，可在 exe 同目录放置 `local_config.yaml`。
+打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。构建会通过 `imageio-ffmpeg` 收集并打入平台 FFmpeg，最终用户无需自行下载。将 exe 放到任意目录即可使用；如需覆盖默认配置，可在 exe 同目录放置 `local_config.yaml`。
 
 #### GUI 使用
 
@@ -158,6 +159,7 @@ m3u8-to-mp4/
 | customtkinter | 桌面应用界面 |
 | tkinterdnd2 | 拖放文件/文件夹 |
 | ffmpeg-python | 调用 FFmpeg 合并 ts 分片 |
+| imageio-ffmpeg | 解析并提供 FFmpeg 可执行文件（含打包进发行版的平台二进制） |
 | pycryptodome | AES-128 分片解密 |
 | PyYAML | 读取配置文件 |
 | tqdm / colorama 等 | 辅助工具库 |
@@ -165,3 +167,5 @@ m3u8-to-mp4/
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE)。
+
+发行版会通过 `imageio-ffmpeg` 内置 FFmpeg 可执行文件。当前 Windows 构建按 **GPL v3+** 分发；本项目以独立子进程调用，不与其链接。第三方组件的来源与许可详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

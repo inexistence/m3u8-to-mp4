@@ -1,4 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
+import imageio_ffmpeg
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 block_cipher = None
@@ -8,12 +11,20 @@ datas += collect_data_files('customtkinter')
 
 dnd_datas, dnd_binaries, dnd_hiddenimports = collect_all('tkinterdnd2')
 datas += dnd_datas
-hiddenimports = dnd_hiddenimports
+hiddenimports = list(dnd_hiddenimports)
+
+ffmpeg_datas, ffmpeg_binaries, ffmpeg_hiddenimports = collect_all('imageio_ffmpeg')
+datas += ffmpeg_datas
+hiddenimports += list(ffmpeg_hiddenimports)
+
+ffmpeg_executable = Path(imageio_ffmpeg.get_ffmpeg_exe())
+if not ffmpeg_executable.is_file():
+    raise FileNotFoundError(f'无法找到用于打包的 FFmpeg：{ffmpeg_executable}')
 
 a = Analysis(
     ['gui_app.py'],
     pathex=[],
-    binaries=dnd_binaries,
+    binaries=dnd_binaries + ffmpeg_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -39,7 +50,8 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    # FFmpeg 体积大，UPX 压缩收益有限，且易触发解压异常或杀软误报
+    upx_exclude=[ffmpeg_executable.name],
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,

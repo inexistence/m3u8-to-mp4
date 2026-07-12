@@ -3,3 +3,4 @@ __pycache__
 local_config.yaml
 build/
 dist/
+.worktrees/
