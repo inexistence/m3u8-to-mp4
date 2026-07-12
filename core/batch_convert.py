@@ -1,11 +1,8 @@
 """批量并行转换。"""
 from __future__ import annotations
 
-import io
 import threading
-import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
@@ -44,6 +41,8 @@ class BatchCallbacks:
 
 
 def resolve_worker_count(config: GlobalConfig) -> int:
+    if getattr(config, 'stream_selection', None) == 'interactive':
+        return 1
     return normalize_max_parallel_conversions(getattr(config, 'max_parallel_conversions', 2))
 
 
@@ -77,7 +76,6 @@ def run_batch_conversions(
             callbacks.on_task_started(index, task)
 
         stream_index = task.selected_stream_index if task.is_master_playlist else None
-        buffer = io.StringIO()
         cancel_event = cancel.task_cancels[index]
 
         def report_progress(phase: str, current: int, total_parts: int | None) -> None:
@@ -85,13 +83,14 @@ def run_batch_conversions(
                 callbacks.on_task_progress(index, phase, current, total_parts)
 
         try:
-            with redirect_stdout(buffer), redirect_stderr(buffer):
-                converter = M3U8Converter(m3u8_index_file_path=task.path, config=config)
-                converter.convert(
-                    stream_index=stream_index,
-                    progress_callback=report_progress,
-                    cancel_event=cancel_event,
-                )
+            # Do not redirect stdout/stderr here; redirectors are process-global
+            # and unsafe while conversions run in the thread pool.
+            converter = M3U8Converter(m3u8_index_file_path=task.path, config=config)
+            converter.convert(
+                stream_index=stream_index,
+                progress_callback=report_progress,
+                cancel_event=cancel_event,
+            )
             task.status = TaskStatus.DONE
             with done_lock:
                 done_count += 1
@@ -105,13 +104,8 @@ def run_batch_conversions(
         except Exception as exc:
             task.status = TaskStatus.ERROR
             task.error_message = str(exc)
-            buffer.write(traceback.format_exc())
             if callbacks.on_task_error:
                 callbacks.on_task_error(index, task, exc)
-        finally:
-            output = buffer.getvalue().strip()
-            if output and callbacks.on_log:
-                callbacks.on_log(output)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(convert_one, index, task) for index, task in enumerate(tasks)]

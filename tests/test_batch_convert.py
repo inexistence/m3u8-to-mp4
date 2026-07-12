@@ -44,6 +44,33 @@ class BatchConvertTests(unittest.TestCase):
         self.assertLessEqual(peak, 2)
         self.assertTrue(all(t.status == TaskStatus.DONE for t in tasks))
 
+    def test_interactive_stream_selection_forces_single_worker(self) -> None:
+        tasks = [_task(f'{i}.m3u8') for i in range(4)]
+        config = MagicMock(spec=GlobalConfig)
+        config.max_parallel_conversions = 4
+        config.stream_selection = 'interactive'
+        current = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def fake_convert(*, stream_index=None, progress_callback=None, cancel_event=None):
+            nonlocal current, peak
+            with lock:
+                current += 1
+                peak = max(peak, current)
+            time.sleep(0.05)
+            with lock:
+                current -= 1
+
+        cancel = BatchCancelController.for_tasks(len(tasks))
+        with patch('core.batch_convert.M3U8Converter') as cls:
+            cls.return_value.convert.side_effect = fake_convert
+            done = run_batch_conversions(tasks, config, cancel=cancel)
+
+        self.assertEqual(done, 4)
+        self.assertEqual(peak, 1)
+        self.assertTrue(all(t.status == TaskStatus.DONE for t in tasks))
+
     def test_cancel_all_marks_running_error_and_pending_skipped(self) -> None:
         tasks = [_task('a.m3u8'), _task('b.m3u8'), _task('c.m3u8')]
         config = MagicMock(spec=GlobalConfig)
