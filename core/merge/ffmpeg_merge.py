@@ -6,10 +6,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from typing import Callable
 
 from tqdm import tqdm
 
+from core.utils.cancellation import ConversionCancelled
 from core.utils.ffmpeg_check import ensure_ffmpeg
 
 
@@ -34,6 +36,7 @@ class FfmpegMerger(TsMerger):
         self,
         target_file_path: str | Path,
         progress_callback: Callable[[str, int, int | None], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         if isinstance(target_file_path, str):
             self.target_file_path = Path(target_file_path)
@@ -47,11 +50,31 @@ class FfmpegMerger(TsMerger):
         self._progress_total = 0
         self._progress_current = 0
         self._media_duration_ms: int | None = None
+        self._cancel_event = cancel_event
+        self._process: subprocess.Popen | None = None
 
     @staticmethod
     def _can_report_progress() -> bool:
         """窗口程序以无控制台方式启动时，标准流可能为 None。"""
         return getattr(sys.stderr, 'write', None) is not None
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            raise ConversionCancelled()
+
+    def _cleanup_temp(self) -> None:
+        if self.merged_ts_file is not None:
+            self.merged_ts_file.close()
+            self.merged_ts_file = None
+        if self.tmp_dir is not None:
+            shutil.rmtree(self.tmp_dir, ignore_errors=True)
+            self.tmp_dir = None
+
+    def _remove_incomplete_output(self) -> None:
+        try:
+            self.target_file_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def start(self):
         tmp_dir_name = tempfile.mkdtemp()
@@ -115,6 +138,10 @@ class FfmpegMerger(TsMerger):
         if self.merged_ts_file is not None:
             self.merged_ts_file.close()
             self.merged_ts_file = None
+            if self._cancel_event is not None and self._cancel_event.is_set():
+                self._cleanup_temp()
+                self._remove_incomplete_output()
+                raise ConversionCancelled()
             if self._can_report_progress():
                 tqdm.write('converting to mp4...')
             try:
@@ -129,9 +156,6 @@ class FfmpegMerger(TsMerger):
                 if self._can_report_progress():
                     tqdm.write(f'merge success, output = {self.target_file_path}')
             finally:
-                if self.tmp_dir is not None:
-                    shutil.rmtree(self.tmp_dir)
-                    self.tmp_dir = None
+                self._cleanup_temp()
         elif self.tmp_dir is not None:
-            shutil.rmtree(self.tmp_dir)
-            self.tmp_dir = None
+            self._cleanup_temp()
