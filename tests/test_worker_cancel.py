@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -21,16 +23,19 @@ class WorkerCancelTests(unittest.TestCase):
         task_b = _make_task('b.m3u8')
         events: list[WorkerEvent] = []
         config = MagicMock(spec=GlobalConfig)
+        config.max_parallel_conversions = 1
         worker = ConversionWorker([task_a, task_b], config, events.append)
         seen_cancel_event = []
 
         def fake_convert(*, stream_index=None, progress_callback=None, cancel_event=None):
             seen_cancel_event.append(cancel_event)
-            self.assertIs(cancel_event, worker._cancel)
-            cancel_event.set()
+            worker.cancel()
+            deadline = time.time() + 2
+            while not cancel_event.is_set() and time.time() < deadline:
+                time.sleep(0.01)
             raise ConversionCancelled()
 
-        with patch('gui.worker.M3U8Converter') as converter_cls:
+        with patch('core.batch_convert.M3U8Converter') as converter_cls:
             converter_cls.return_value.convert.side_effect = fake_convert
             worker._run()
 
@@ -49,12 +54,9 @@ class WorkerCancelTests(unittest.TestCase):
         self.assertNotIn('task_done', kinds)
 
         self.assertEqual(len(seen_cancel_event), 1)
-        self.assertIs(seen_cancel_event[0], worker._cancel)
+        self.assertIsInstance(seen_cancel_event[0], threading.Event)
+        self.assertTrue(seen_cancel_event[0].is_set())
         converter_cls.return_value.convert.assert_called_once()
-        self.assertIs(
-            converter_cls.return_value.convert.call_args.kwargs.get('cancel_event'),
-            worker._cancel,
-        )
 
 
 if __name__ == '__main__':

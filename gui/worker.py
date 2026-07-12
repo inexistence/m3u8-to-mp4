@@ -1,15 +1,11 @@
 """后台转换线程。"""
 from __future__ import annotations
 
-import io
 import threading
-import traceback
-from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
-from core.m3u8converter import M3U8Converter
-from core.utils.cancellation import ConversionCancelled
+from core.batch_convert import BatchCallbacks, BatchCancelController, run_batch_conversions
 from core.utils.config import GlobalConfig
 from gui.models import ConversionTask, TaskStatus
 
@@ -49,17 +45,20 @@ class ConversionWorker:
         self.global_config = config
         self.on_event = on_event
         self._thread: threading.Thread | None = None
-        self._cancel = threading.Event()
+        self._cancel = BatchCancelController.for_tasks(len(self.tasks))
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
-        self._cancel.clear()
+        self._cancel = BatchCancelController.for_tasks(len(self.tasks))
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def cancel(self) -> None:
-        self._cancel.set()
+        self._cancel.cancel_all()
+
+    def cancel_task(self, index: int) -> None:
+        self._cancel.cancel_task(index)
 
     def _emit(
         self,
@@ -81,65 +80,73 @@ class ConversionWorker:
             progress_phase=progress_phase,
         ))
 
-    def _convert_one(self, task: ConversionTask, task_index: int) -> None:
-        task.status = TaskStatus.RUNNING
-        stream_index = task.selected_stream_index if task.is_master_playlist else None
-        buffer = io.StringIO()
-        try:
-            def report_progress(phase: str, current: int, total: int | None) -> None:
-                progress_phase, percent, label = map_task_progress(phase, current, total)
-                self._emit(
-                    'task_progress',
-                    message=label,
-                    task_index=task_index,
-                    progress_percent=percent,
-                    progress_phase=progress_phase,
-                )
-
-            with redirect_stdout(buffer), redirect_stderr(buffer):
-                converter = M3U8Converter(m3u8_index_file_path=task.path, config=self.global_config)
-                converter.convert(
-                    stream_index=stream_index,
-                    progress_callback=report_progress,
-                    cancel_event=self._cancel,
-                )
-            task.status = TaskStatus.DONE
-        except ConversionCancelled as exc:
-            task.status = TaskStatus.ERROR
-            task.error_message = str(exc) or '用户取消'
-            raise
-        except Exception as exc:
-            task.status = TaskStatus.ERROR
-            task.error_message = str(exc)
-            buffer.write(traceback.format_exc())
-            raise exc
-        finally:
-            output = buffer.getvalue().strip()
-            if output:
-                self._emit('log', output)
-
     def _run(self) -> None:
-        batch_tasks = tuple(enumerate(self.tasks))
-        total = len(batch_tasks)
+        total = len(self.tasks)
         if total == 0:
             self._emit('error', '请至少选择一个文件')
             self._emit('finished')
             return
 
         self._emit('started', total_count=total)
-        done = 0
-        for index, task in batch_tasks:
-            if self._cancel.is_set():
-                if task.status == TaskStatus.PENDING:
-                    task.status = TaskStatus.SKIPPED
-                continue
+        done_lock = threading.Lock()
+        emitted_done = 0
 
-            self._emit('task_started', task.path.name, task_index=index, done_count=done, total_count=total)
-            try:
-                self._convert_one(task, index)
-                done += 1
-                self._emit('task_done', f'完成: {task.path.name}', task_index=index, done_count=done, total_count=total)
-            except Exception as exc:
-                self._emit('task_error', f'失败: {task.path.name} — {exc}', task_index=index, done_count=done, total_count=total)
+        def current_done() -> int:
+            with done_lock:
+                return emitted_done
 
+        def on_task_started(index: int, task: ConversionTask) -> None:
+            self._emit(
+                'task_started',
+                task.path.name,
+                task_index=index,
+                done_count=current_done(),
+                total_count=total,
+            )
+
+        def on_task_progress(index: int, phase: str, current: int, count: int | None) -> None:
+            progress_phase, percent, label = map_task_progress(phase, current, count)
+            self._emit(
+                'task_progress',
+                message=label,
+                task_index=index,
+                progress_percent=percent,
+                progress_phase=progress_phase,
+            )
+
+        def on_task_done(index: int, task: ConversionTask) -> None:
+            nonlocal emitted_done
+            with done_lock:
+                emitted_done += 1
+                done_count = emitted_done
+            self._emit(
+                'task_done',
+                f'完成: {task.path.name}',
+                task_index=index,
+                done_count=done_count,
+                total_count=total,
+            )
+
+        def on_task_error(index: int, task: ConversionTask, exc: BaseException) -> None:
+            self._emit(
+                'task_error',
+                f'失败: {task.path.name} — {exc}',
+                task_index=index,
+                done_count=current_done(),
+                total_count=total,
+            )
+
+        callbacks = BatchCallbacks(
+            on_task_started=on_task_started,
+            on_task_progress=on_task_progress,
+            on_task_done=on_task_done,
+            on_task_error=on_task_error,
+            on_log=lambda output: self._emit('log', output),
+        )
+        done = run_batch_conversions(
+            self.tasks,
+            self.global_config,
+            cancel=self._cancel,
+            callbacks=callbacks,
+        )
         self._emit('finished', done_count=done, total_count=total)
