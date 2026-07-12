@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from core.m3u8converter import M3U8Converter
+from core.utils.cancellation import ConversionCancelled
 from core.utils.config import GlobalConfig
 from gui.models import ConversionTask, TaskStatus
 
@@ -97,8 +98,16 @@ class ConversionWorker:
 
             with redirect_stdout(buffer), redirect_stderr(buffer):
                 converter = M3U8Converter(m3u8_index_file_path=task.path, config=self.global_config)
-                converter.convert(stream_index=stream_index, progress_callback=report_progress)
+                converter.convert(
+                    stream_index=stream_index,
+                    progress_callback=report_progress,
+                    cancel_event=self._cancel,
+                )
             task.status = TaskStatus.DONE
+        except ConversionCancelled as exc:
+            task.status = TaskStatus.ERROR
+            task.error_message = str(exc) or '用户取消'
+            raise
         except Exception as exc:
             task.status = TaskStatus.ERROR
             task.error_message = str(exc)

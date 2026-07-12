@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from core.discovery import M3u8Entry
+from core.utils.cancellation import ConversionCancelled
+from core.utils.config import GlobalConfig
+from gui.models import ConversionTask, TaskStatus
+from gui.worker import ConversionWorker, WorkerEvent
+
+
+def _make_task(name: str) -> ConversionTask:
+    return ConversionTask(entry=M3u8Entry(path=Path(name)))
+
+
+class WorkerCancelTests(unittest.TestCase):
+    def test_cancelled_task_becomes_error_and_pending_skipped(self) -> None:
+        task_a = _make_task('a.m3u8')
+        task_b = _make_task('b.m3u8')
+        events: list[WorkerEvent] = []
+        config = MagicMock(spec=GlobalConfig)
+        worker = ConversionWorker([task_a, task_b], config, events.append)
+        seen_cancel_event = []
+
+        def fake_convert(*, stream_index=None, progress_callback=None, cancel_event=None):
+            seen_cancel_event.append(cancel_event)
+            self.assertIs(cancel_event, worker._cancel)
+            cancel_event.set()
+            raise ConversionCancelled()
+
+        with patch('gui.worker.M3U8Converter') as converter_cls:
+            converter_cls.return_value.convert.side_effect = fake_convert
+            worker._run()
+
+        self.assertEqual(task_a.status, TaskStatus.ERROR)
+        self.assertEqual(task_a.error_message, '用户取消')
+        self.assertEqual(task_b.status, TaskStatus.SKIPPED)
+
+        kinds = [e.kind for e in events]
+        self.assertIn('task_error', kinds)
+        self.assertIn('finished', kinds)
+
+        self.assertEqual(len(seen_cancel_event), 1)
+        self.assertIs(seen_cancel_event[0], worker._cancel)
+        converter_cls.return_value.convert.assert_called_once()
+        self.assertIs(
+            converter_cls.return_value.convert.call_args.kwargs.get('cancel_event'),
+            worker._cancel,
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()
