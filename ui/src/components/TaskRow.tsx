@@ -43,9 +43,21 @@ export function TaskRow({
         {task.progressMessage && <span className="task-row__message">{task.progressMessage}</span>}
         {task.errorMessage && <pre className="task-row__error">{task.errorMessage}</pre>}
         {task.progressPercent !== null && (
-          <progress max="100" value={task.progressPercent}>
-            {task.progressPercent}%
-          </progress>
+          <div
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={task.progressPercent}
+            className="task-row__progress"
+            role="progressbar"
+          >
+            <div
+              className="task-row__progress-fill"
+              style={{
+                width: `${task.progressPercent}%`,
+                transition: 'width 160ms linear',
+              }}
+            />
+          </div>
         )}
       </div>
       <div className="task-row__options">

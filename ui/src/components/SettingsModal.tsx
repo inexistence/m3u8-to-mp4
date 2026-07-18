@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { useState, type FormEvent } from 'react'
 import type { SidecarConfig } from '../types'
 
@@ -27,12 +28,22 @@ export function SettingsModal({ config, onClose, onSave }: SettingsModalProps) {
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
+    <motion.div
+      animate={{ opacity: 1 }}
+      className="modal-backdrop"
+      initial={{ opacity: 0 }}
+      role="presentation"
+      transition={{ duration: 0.18 }}
+      onMouseDown={onClose}
+    >
+      <motion.section
+        animate={{ opacity: 1, y: 0 }}
         aria-labelledby="settings-title"
         aria-modal="true"
         className="settings-modal"
+        initial={{ opacity: 0, y: 8 }}
         role="dialog"
+        transition={{ duration: 0.18 }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <form onSubmit={(event) => void submit(event)}>
@@ -108,7 +119,7 @@ export function SettingsModal({ config, onClose, onSave }: SettingsModalProps) {
             </button>
           </footer>
         </form>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   )
 }

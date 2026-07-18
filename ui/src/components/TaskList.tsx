@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import type { QueueTask } from '../types'
 import { TaskRow } from './TaskRow'
 
@@ -24,21 +25,31 @@ export function TaskList({
 
   return (
     <section className="task-list" aria-label="转换队列">
-      {tasks.map((task) => (
-        <TaskRow
-          key={task.id}
-          cancellable={
-            isConverting &&
-            activeBatchIds.includes(task.id) &&
-            (task.status === 'pending' || task.status === 'running')
-          }
-          disabled={isConverting}
-          task={task}
-          onCancel={() => onCancel(task.id)}
-          onStreamChange={(index) => onStreamChange(task.id, index)}
-          onToggle={() => onToggle(task.id)}
-        />
-      ))}
+      <AnimatePresence initial={false}>
+        {tasks.map((task) => (
+          <motion.div
+            key={task.id}
+            layout
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <TaskRow
+              cancellable={
+                isConverting &&
+                activeBatchIds.includes(task.id) &&
+                (task.status === 'pending' || task.status === 'running')
+              }
+              disabled={isConverting}
+              task={task}
+              onCancel={() => onCancel(task.id)}
+              onStreamChange={(index) => onStreamChange(task.id, index)}
+              onToggle={() => onToggle(task.id)}
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </section>
   )
 }
