@@ -1,0 +1,27 @@
+:root {
+  --surface-bg: #f8fafc;
+  --surface-card: #ffffff;
+  --surface-muted: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border: #e2e8f0;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --success: #15803d;
+  --error: #dc2626;
+  --warning: #d97706;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --font-ui: "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-bg: #0f172a;
+    --surface-card: #162033;
+    --surface-muted: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --border: #334155;
+  }
+}

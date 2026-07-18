@@ -42,8 +42,8 @@ export interface ConvertTaskInput {
 
 export interface SidecarConfig {
   skip_first_part?: boolean
-  output_file_name?: string
-  output_directory?: string
+  output_file_name?: string | null
+  output_directory?: string | null
   reset_decryption_if_part_changed?: boolean
   aes_iv_mode?: string
   max_parallel_conversions?: number
