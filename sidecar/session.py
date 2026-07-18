@@ -88,8 +88,11 @@ class SidecarSession:
 
             batch: list[tuple[str, ConversionTask]] = []
             for item in tasks:
-                entry = M3u8Entry.from_path(Path(item.path))
-                entry.selected_stream_index = item.selected_stream_index
+                entry = M3u8Entry(
+                    path=Path(item.path),
+                    streams=[],
+                    selected_stream_index=item.selected_stream_index,
+                )
                 batch.append((item.task_id, ConversionTask(entry=entry)))
 
             batch_config = copy.deepcopy(self.global_config)
