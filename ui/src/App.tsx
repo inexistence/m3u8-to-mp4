@@ -7,6 +7,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { TaskList } from './components/TaskList'
 import { Toolbar } from './components/Toolbar'
 import { TopBar } from './components/TopBar'
+import { batchFeedback } from './queueMessages'
 import { initialQueueState, queueReducer } from './state/queueStore'
 import type { QueueTask, ScanEntry, SidecarConfig, SidecarEvent } from './types'
 import './App.css'
@@ -64,6 +65,8 @@ function App() {
     () => new Set(),
   )
   const batchStatuses = useRef(new Map<string, QueueTask['status']>())
+  const snapshotGen = useRef(0)
+  const batchFinishedSnapshotGen = useRef(-1)
 
   useEffect(() => {
     let active = true
@@ -93,10 +96,17 @@ function App() {
         setFfmpegAvailable(false)
         setFfmpegMessage(String(error))
       })
+    const gen = ++snapshotGen.current
     void api
       .batch()
       .then((batch) => {
-        if (!active) return
+        if (
+          !active ||
+          gen !== snapshotGen.current ||
+          batchFinishedSnapshotGen.current === gen
+        ) {
+          return
+        }
         dispatch({ type: 'SET_CONVERTING', isConverting: batch.is_converting })
         for (const task of batch.tasks) {
           batchStatuses.current.set(task.task_id, task.status)
@@ -124,11 +134,12 @@ function App() {
 
     const unsubscribe = ws.onEvent((event) => {
       if (event.type === 'batch_finished') {
+        batchFinishedSnapshotGen.current = snapshotGen.current
         const statuses = [...batchStatuses.current.values()]
         const success = statuses.filter((status) => status === 'done').length
         const failed = statuses.filter((status) => status === 'error').length
         const cancelled = statuses.filter((status) => status === 'skipped').length
-        const feedback = `本批完成：成功 ${success}，失败 ${failed}，取消 ${cancelled}`
+        const feedback = batchFeedback(success, failed, cancelled)
         dispatch({ type: 'BATCH_FINISHED', feedback })
         batchStatuses.current.clear()
         setCancellingAll(false)
@@ -164,9 +175,16 @@ function App() {
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
       reconnectTimer = setTimeout(() => {
         ws.connect()
+        const gen = ++snapshotGen.current
         void api
           .batch()
           .then((batch) => {
+            if (
+              gen !== snapshotGen.current ||
+              batchFinishedSnapshotGen.current === gen
+            ) {
+              return
+            }
             dispatch({ type: 'SET_CONVERTING', isConverting: batch.is_converting })
             for (const task of batch.tasks) {
               batchStatuses.current.set(task.task_id, task.status)

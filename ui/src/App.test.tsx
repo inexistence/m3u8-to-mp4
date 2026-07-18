@@ -169,7 +169,11 @@ describe('App sidecar wiring', () => {
       })
     })
 
-    expect(await screen.findByText('本批完成：成功 1，失败 1，取消 1')).toBeTruthy()
+    expect(
+      await screen.findByText(
+        '本批完成：成功 1，失败 1，取消 1；点击失败任务可查看详情',
+      ),
+    ).toBeTruthy()
   })
 
   it('reconnects after a close and merges the batch snapshot', async () => {
@@ -220,6 +224,52 @@ describe('App sidecar wiring', () => {
     expect(api.batch).toHaveBeenCalledTimes(2)
     expect(ws.connect).toHaveBeenCalledTimes(2)
     expect(screen.getByText('已完成')).toBeTruthy()
+  })
+
+  it('ignores a stale reconnect snapshot after the batch finishes', async () => {
+    let resolveReconnectSnapshot!: (value: {
+      is_converting: boolean
+      tasks: []
+    }) => void
+    const reconnectSnapshot = new Promise<{
+      is_converting: boolean
+      tasks: []
+    }>((resolve) => {
+      resolveReconnectSnapshot = resolve
+    })
+    vi.spyOn(api, 'batch')
+      .mockResolvedValueOnce({ is_converting: false, tasks: [] })
+      .mockReturnValueOnce(reconnectSnapshot)
+
+    render(<App />)
+    await waitFor(() => expect(api.batch).toHaveBeenCalledTimes(1))
+
+    vi.useFakeTimers()
+    act(() => emitClose())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(api.batch).toHaveBeenCalledTimes(2)
+
+    act(() => {
+      emitEvent({
+        type: 'batch_finished',
+        task_id: '',
+        message: '',
+        done_count: 0,
+        total_count: 0,
+        progress_percent: null,
+        progress_phase: '',
+        status: '',
+        error_message: '',
+      })
+      resolveReconnectSnapshot({ is_converting: true, tasks: [] })
+    })
+    await act(async () => {
+      await reconnectSnapshot
+    })
+
+    expect(screen.queryByRole('button', { name: '取消全部' })).toBeNull()
   })
 
   it('saves edited settings through the config endpoint', async () => {
