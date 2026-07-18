@@ -9,6 +9,7 @@ class ScanRequest(BaseModel):
 
 
 class EntryOut(BaseModel):
+    task_id: str
     path: str
     is_master_playlist: bool
     stream_labels: list[str]
@@ -26,6 +27,7 @@ class ScanResult(BaseModel):
 class ConvertTaskIn(BaseModel):
     task_id: str
     path: str
+    is_master_playlist: bool = False
     selected_stream_index: int = 0
 
 

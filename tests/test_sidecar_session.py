@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import threading
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,27 @@ from sidecar.schemas import ConvertTaskIn
 
 
 class SidecarSessionTests(unittest.TestCase):
+    def test_scan_assigns_unique_uuid_task_ids(self) -> None:
+        session = SidecarSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('first', 'second'):
+                directory = root / name
+                directory.mkdir()
+                (directory / 'index.m3u8').write_text(
+                    '#EXTM3U\n#EXTINF:1,\nseg.ts\n',
+                    encoding='utf-8',
+                )
+                (directory / 'seg.ts').write_bytes(b'\x00')
+
+            result = session.scan([str(root)], known_paths=[])
+
+        self.assertEqual(result.added, 2)
+        task_ids = [entry.task_id for entry in result.entries]
+        self.assertEqual(len(task_ids), len(set(task_ids)))
+        for task_id in task_ids:
+            self.assertEqual(str(uuid.UUID(task_id)), task_id)
+
     def test_scan_dedupes_against_known_paths(self) -> None:
         session = SidecarSession()
         with tempfile.TemporaryDirectory() as tmp:
@@ -45,6 +67,22 @@ class SidecarSessionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'task list must not be empty'):
             session.start_convert([])
+
+    def test_master_playlist_convert_uses_selected_stream_index(self) -> None:
+        session = SidecarSession()
+        task = ConvertTaskIn(
+            task_id='master-task',
+            path='master.m3u8',
+            is_master_playlist=True,
+            selected_stream_index=1,
+        )
+
+        with patch('core.batch_convert.M3U8Converter.convert') as convert:
+            session.start_convert([task])
+            session._thread.join(timeout=2)
+
+        self.assertFalse(session._thread.is_alive())
+        self.assertEqual(convert.call_args.kwargs['stream_index'], 1)
 
     def test_batch_uses_config_snapshot_and_rejects_updates_while_running(self) -> None:
         session = SidecarSession()

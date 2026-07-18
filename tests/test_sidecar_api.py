@@ -33,6 +33,16 @@ class SidecarApiTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertFalse(res.json()['is_converting'])
 
+    def test_cancel_all_while_idle(self) -> None:
+        res = self.client.post('/api/cancel')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {'ok': True})
+
+    def test_cancel_unknown_task(self) -> None:
+        res = self.client.post('/api/cancel/unknown-task')
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.json()['detail'], 'unknown task_id')
+
 
 if __name__ == '__main__':
     unittest.main()

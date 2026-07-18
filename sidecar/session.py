@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import copy
 import threading
+import uuid
 from pathlib import Path
 
 from core.batch_convert import BatchCallbacks, BatchCancelController, run_batch_conversions
 from core.discovery import M3u8Entry, find_entry_m3u8_from_paths
+from core.m3u8_stream import StreamVariant
 from core.models import ConversionTask, TaskStatus
 from core.queue_messages import scan_feedback
 from core.utils.config import GlobalConfig, get_global_config, save_local_config
@@ -44,6 +46,7 @@ class SidecarSession:
                 continue
             known.add(resolved)
             entries.append(EntryOut(
+                task_id=str(uuid.uuid4()),
                 path=str(entry.path),
                 is_master_playlist=entry.is_master_playlist,
                 stream_labels=entry.stream_labels,
@@ -88,9 +91,14 @@ class SidecarSession:
 
             batch: list[tuple[str, ConversionTask]] = []
             for item in tasks:
+                streams = (
+                    [StreamVariant() for _ in range(max(item.selected_stream_index + 1, 2))]
+                    if item.is_master_playlist
+                    else []
+                )
                 entry = M3u8Entry(
                     path=Path(item.path),
-                    streams=[],
+                    streams=streams,
                     selected_stream_index=item.selected_stream_index,
                 )
                 batch.append((item.task_id, ConversionTask(entry=entry)))
