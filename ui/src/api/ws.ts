@@ -15,15 +15,18 @@ class SidecarWebSocket {
     }
 
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-    this.socket = new WebSocket(`${protocol}://${location.host}/ws`)
-    this.socket.onmessage = (message) => {
+    const socket = new WebSocket(`${protocol}://${location.host}/ws`)
+    this.socket = socket
+    socket.onmessage = (message) => {
       const event = JSON.parse(String(message.data)) as SidecarEvent
       for (const listener of this.listeners) {
         listener(event)
       }
     }
-    this.socket.onclose = () => {
-      this.socket = null
+    socket.onclose = (event) => {
+      if (event.target === this.socket) {
+        this.socket = null
+      }
     }
   }
 
