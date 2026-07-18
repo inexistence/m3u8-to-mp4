@@ -9,7 +9,7 @@ from typing import Callable, Sequence
 from core.m3u8converter import M3U8Converter
 from core.utils.cancellation import ConversionCancelled
 from core.utils.config import GlobalConfig, normalize_max_parallel_conversions
-from gui.models import ConversionTask, TaskStatus
+from core.models import ConversionTask, TaskStatus
 
 
 @dataclass

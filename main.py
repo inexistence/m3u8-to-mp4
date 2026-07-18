@@ -4,7 +4,7 @@ from core.discovery import find_entry_m3u8, M3u8Entry
 import argparse
 from core.utils.config import (get_global_config, GlobalConfig)
 from core.utils.ffmpeg_check import ensure_ffmpeg, ffmpeg_missing_message
-from gui.models import ConversionTask
+from core.models import ConversionTask
 import os
 import sys
 from pathlib import Path
