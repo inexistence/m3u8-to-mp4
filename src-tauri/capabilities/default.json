@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Default window capability. Sidecar is spawned from Rust via std::process (no shell plugin). App commands such as get_sidecar_base are allowed by default for bundled webviews.",
   "windows": [
     "main"
   ],

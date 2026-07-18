@@ -18,6 +18,25 @@ class SidecarApiTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json(), {'ok': True})
 
+    def test_tauri_webview_origin_is_allowed(self) -> None:
+        for origin in (
+            'http://127.0.0.1:5173',
+            'http://tauri.localhost',
+        ):
+            with self.subTest(origin=origin):
+                res = self.client.options(
+                    '/api/health',
+                    headers={
+                        'Origin': origin,
+                        'Access-Control-Request-Method': 'GET',
+                    },
+                )
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(
+                    res.headers['access-control-allow-origin'],
+                    origin,
+                )
+
     def test_config_roundtrip(self) -> None:
         res = self.client.get('/api/config')
         self.assertEqual(res.status_code, 200)

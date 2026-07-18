@@ -4,6 +4,7 @@ import asyncio
 import queue
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from core.utils.ffmpeg_check import (
     describe_ffmpeg_status,
@@ -17,6 +18,18 @@ from sidecar.session import SidecarSession
 def create_app(session: SidecarSession | None = None) -> FastAPI:
     active_session = session or SidecarSession()
     app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            'http://127.0.0.1:5173',
+            'http://localhost:5173',
+            'http://tauri.localhost',
+            'https://tauri.localhost',
+            'tauri://localhost',
+        ],
+        allow_methods=['*'],
+        allow_headers=['*'],
+    )
 
     @app.get('/api/health')
     def health() -> dict:

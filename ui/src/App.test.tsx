@@ -4,6 +4,11 @@ import App, { patchFromEvent } from './App'
 import { api } from './api/client'
 import { ws } from './api/ws'
 
+async function renderReadyApp() {
+  render(<App />)
+  await screen.findByLabelText('路径列表')
+}
+
 describe('App sidecar wiring', () => {
   let emitEvent: Parameters<typeof ws.onEvent>[0]
   let emitClose: () => void
@@ -39,6 +44,27 @@ describe('App sidecar wiring', () => {
     vi.restoreAllMocks()
   })
 
+  it('gates the queue until health succeeds and offers retry after timeout', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.health).mockRejectedValue(new Error('connection refused'))
+
+    render(<App />)
+    expect(screen.getByText('正在启动转换服务…')).toBeTruthy()
+    expect(screen.queryByLabelText('路径列表')).toBeNull()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9_500)
+    })
+    expect(screen.getByText('转换服务启动失败')).toBeTruthy()
+
+    vi.mocked(api.health).mockResolvedValue({ ok: true })
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByLabelText('路径列表')).toBeTruthy()
+  })
+
   it('scans pasted paths and converts selected entries using sidecar ids', async () => {
     vi.spyOn(api, 'scan').mockResolvedValue({
       entries: [
@@ -57,7 +83,7 @@ describe('App sidecar wiring', () => {
     })
     const convert = vi.spyOn(api, 'convert').mockResolvedValue({ ok: true })
 
-    render(<App />)
+    await renderReadyApp()
 
     fireEvent.change(screen.getByLabelText('路径列表'), {
       target: { value: 'C:\\videos\\master.m3u8' },
@@ -101,7 +127,7 @@ describe('App sidecar wiring', () => {
     const cancelTask = vi.spyOn(api, 'cancelTask').mockResolvedValue({ ok: true })
     const cancelAll = vi.spyOn(api, 'cancelAll').mockResolvedValue({ ok: true })
 
-    render(<App />)
+    await renderReadyApp()
     fireEvent.change(screen.getByLabelText('路径列表'), {
       target: { value: 'C:\\videos\\one.m3u8' },
     })
@@ -134,7 +160,7 @@ describe('App sidecar wiring', () => {
     })
     vi.spyOn(api, 'convert').mockResolvedValue({ ok: true })
 
-    render(<App />)
+    await renderReadyApp()
     fireEvent.change(screen.getByLabelText('路径列表'), {
       target: { value: 'C:\\videos' },
     })
@@ -198,7 +224,7 @@ describe('App sidecar wiring', () => {
       value: { writeText },
     })
 
-    render(<App />)
+    await renderReadyApp()
     fireEvent.change(screen.getByLabelText('路径列表'), {
       target: { value: 'C:\\videos\\error.m3u8' },
     })
@@ -228,8 +254,8 @@ describe('App sidecar wiring', () => {
     expect(screen.queryByText('ffmpeg exited with code 1')).toBeNull()
   })
 
-  it('uses absolute path paste without misleading browser picker buttons', () => {
-    render(<App />)
+  it('uses absolute path paste without misleading browser picker buttons', async () => {
+    await renderReadyApp()
 
     expect(
       screen.getByText('桌面版将支持拖放与原生选文件；当前请粘贴绝对路径'),
@@ -270,7 +296,7 @@ describe('App sidecar wiring', () => {
       message: '已添加 1 个任务',
     })
 
-    render(<App />)
+    await renderReadyApp()
     fireEvent.change(screen.getByLabelText('路径列表'), {
       target: { value: 'C:\\videos\\one.m3u8' },
     })
@@ -303,7 +329,7 @@ describe('App sidecar wiring', () => {
       .mockResolvedValueOnce({ is_converting: false, tasks: [] })
       .mockReturnValueOnce(reconnectSnapshot)
 
-    render(<App />)
+    await renderReadyApp()
     await waitFor(() => expect(api.batch).toHaveBeenCalledTimes(1))
 
     vi.useFakeTimers()
@@ -337,7 +363,7 @@ describe('App sidecar wiring', () => {
   it('saves edited settings through the config endpoint', async () => {
     const putConfig = vi.spyOn(api, 'putConfig').mockImplementation(async (config) => config)
 
-    render(<App />)
+    await renderReadyApp()
 
     await waitFor(() => expect(api.getConfig).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: '设置' }))
@@ -356,7 +382,7 @@ describe('App sidecar wiring', () => {
   it('keeps custom output mode active until a path is entered', async () => {
     const putConfig = vi.spyOn(api, 'putConfig').mockImplementation(async (config) => config)
 
-    render(<App />)
+    await renderReadyApp()
 
     await waitFor(() => expect(api.getConfig).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: '指定目录' }))
@@ -381,7 +407,7 @@ describe('App sidecar wiring', () => {
   it('rolls back the output directory when saving fails', async () => {
     vi.spyOn(api, 'putConfig').mockRejectedValue(new Error('disk full'))
 
-    render(<App />)
+    await renderReadyApp()
     await waitFor(() => expect(api.getConfig).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: '指定目录' }))
     const input = screen.getByLabelText('输出目录') as HTMLInputElement

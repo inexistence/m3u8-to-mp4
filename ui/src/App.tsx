@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { api } from './api/client'
+import { api, createApi, type ApiClient } from './api/client'
+import { resolveSidecarBase, waitForHealth } from './api/startup'
 import { ws } from './api/ws'
 import { DropZone } from './components/DropZone'
 import { OutputBar } from './components/OutputBar'
@@ -53,7 +54,7 @@ export function patchFromEvent(event: SidecarEvent): Partial<QueueTask> {
   return patch
 }
 
-function App() {
+function MainQueue({ client }: { client: ApiClient }) {
   const [state, dispatch] = useReducer(queueReducer, initialQueueState)
   const [sidecarReady, setSidecarReady] = useState(false)
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false)
@@ -70,11 +71,11 @@ function App() {
 
   useEffect(() => {
     let active = true
-    void api
+    void client
       .health()
       .then((result) => active && setSidecarReady(result.ok))
       .catch(() => active && setSidecarReady(false))
-    void api
+    void client
       .getConfig()
       .then((config) => {
         if (!active) return
@@ -84,7 +85,7 @@ function App() {
       .catch((error: unknown) => {
         if (active) dispatch({ type: 'SET_FEEDBACK', feedback: `读取设置失败：${String(error)}` })
       })
-    void api
+    void client
       .ffmpegStatus()
       .then((result) => {
         if (!active) return
@@ -97,7 +98,7 @@ function App() {
         setFfmpegMessage(String(error))
       })
     const gen = ++snapshotGen.current
-    void api
+    void client
       .batch()
       .then((batch) => {
         if (
@@ -127,7 +128,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [])
+  }, [client])
 
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
@@ -176,7 +177,7 @@ function App() {
       reconnectTimer = setTimeout(() => {
         ws.connect()
         const gen = ++snapshotGen.current
-        void api
+        void client
           .batch()
           .then((batch) => {
             if (
@@ -215,7 +216,7 @@ function App() {
       unsubscribeClose()
       ws.disconnect()
     }
-  }, [])
+  }, [client])
 
   const selectedTasks = useMemo(
     () => state.tasks.filter((task) => task.selected),
@@ -224,7 +225,7 @@ function App() {
 
   const addPaths = async (paths: string[]) => {
     try {
-      const result = await api.scan(paths, state.tasks.map((task) => task.path))
+      const result = await client.scan(paths, state.tasks.map((task) => task.path))
       dispatch({
         type: 'ADD_ENTRIES',
         entries: result.entries.map(queueTaskFromScan),
@@ -244,7 +245,7 @@ function App() {
     setCancellingAll(false)
     setCancellingTaskIds(new Set())
     try {
-      await api.convert(
+      await client.convert(
         activeTasks.map((task) => ({
           task_id: task.id,
           path: task.path,
@@ -262,7 +263,7 @@ function App() {
   const cancelAll = async () => {
     setCancellingAll(true)
     try {
-      await api.cancelAll()
+      await client.cancelAll()
     } catch (error) {
       setCancellingAll(false)
       dispatch({ type: 'SET_FEEDBACK', feedback: `取消失败：${String(error)}` })
@@ -272,7 +273,7 @@ function App() {
   const cancelTask = async (taskId: string) => {
     setCancellingTaskIds((current) => new Set(current).add(taskId))
     try {
-      await api.cancelTask(taskId)
+      await client.cancelTask(taskId)
     } catch (error) {
       setCancellingTaskIds((current) => {
         const next = new Set(current)
@@ -284,7 +285,7 @@ function App() {
   }
 
   const saveConfig = async (config: SidecarConfig) => {
-    const saved = await api.putConfig(config)
+    const saved = await client.putConfig(config)
     dispatch({ type: 'HYDRATE_CONFIG', config: saved })
     dispatch({ type: 'SET_FEEDBACK', feedback: '设置已保存' })
   }
@@ -294,7 +295,7 @@ function App() {
     const config = { ...state.config, output_directory: outputDirectory }
     dispatch({ type: 'HYDRATE_CONFIG', config })
     try {
-      const saved = await api.putConfig(config)
+      const saved = await client.putConfig(config)
       dispatch({ type: 'HYDRATE_CONFIG', config: saved })
     } catch (error) {
       dispatch({ type: 'HYDRATE_CONFIG', config: previousConfig })
@@ -361,6 +362,68 @@ function App() {
       )}
     </main>
   )
+}
+
+function App() {
+  const [startupAttempt, setStartupAttempt] = useState(0)
+  const [startup, setStartup] = useState<
+    | { status: 'checking' }
+    | { status: 'ready'; client: ApiClient }
+    | { status: 'error'; message: string }
+  >({ status: 'checking' })
+
+  useEffect(() => {
+    let active = true
+    setStartup({ status: 'checking' })
+
+    void (async () => {
+      try {
+        const base = await resolveSidecarBase()
+        const client = base ? createApi(base) : api
+        ws.setBaseUrl(base)
+        await waitForHealth(client)
+        if (active) setStartup({ status: 'ready', client })
+      } catch (error) {
+        if (active) {
+          setStartup({
+            status: 'error',
+            message: `无法连接转换服务：${String(error)}`,
+          })
+        }
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [startupAttempt])
+
+  if (startup.status === 'checking') {
+    return (
+      <main className="startup-gate" aria-live="polite">
+        <h1>正在启动转换服务…</h1>
+        <p>首次启动可能需要几秒钟。</p>
+      </main>
+    )
+  }
+
+  if (startup.status === 'error') {
+    return (
+      <main className="startup-gate" role="alert">
+        <h1>转换服务启动失败</h1>
+        <p>{startup.message}</p>
+        <button
+          className="button button--primary"
+          type="button"
+          onClick={() => setStartupAttempt((attempt) => attempt + 1)}
+        >
+          重试
+        </button>
+      </main>
+    )
+  }
+
+  return <MainQueue client={startup.client} />
 }
 
 export default App

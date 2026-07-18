@@ -18,35 +18,43 @@ async function json<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T>
   return response.json() as Promise<T>
 }
 
-export const api = {
-  health: () => json<{ ok: boolean }>('/api/health'),
-  getConfig: () => json<SidecarConfig>('/api/config'),
-  putConfig: (body: SidecarConfig) =>
-    json<SidecarConfig>('/api/config', {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    }),
-  scan: (paths: string[], knownPaths: string[]) =>
-    json<ScanResult>('/api/scan', {
-      method: 'POST',
-      body: JSON.stringify({ paths, known_paths: knownPaths }),
-    }),
-  convert: (tasks: ConvertTaskInput[]) =>
-    json<{ ok: boolean }>('/api/convert', {
-      method: 'POST',
-      body: JSON.stringify({ tasks }),
-    }),
-  cancelAll: () =>
-    json<{ ok: boolean }>('/api/cancel', {
-      method: 'POST',
-      body: '{}',
-    }),
-  cancelTask: (taskId: string) =>
-    json<{ ok: boolean }>(`/api/cancel/${encodeURIComponent(taskId)}`, {
-      method: 'POST',
-      body: '{}',
-    }),
-  batch: () => json<BatchSnapshot>('/api/batch'),
-  ffmpegStatus: () =>
-    json<{ available: boolean; message: string }>('/api/ffmpeg-status'),
+export function createApi(base = '') {
+  const url = (path: string) => `${base.replace(/\/$/, '')}${path}`
+
+  return {
+    health: () => json<{ ok: boolean }>(url('/api/health')),
+    getConfig: () => json<SidecarConfig>(url('/api/config')),
+    putConfig: (body: SidecarConfig) =>
+      json<SidecarConfig>(url('/api/config'), {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    scan: (paths: string[], knownPaths: string[]) =>
+      json<ScanResult>(url('/api/scan'), {
+        method: 'POST',
+        body: JSON.stringify({ paths, known_paths: knownPaths }),
+      }),
+    convert: (tasks: ConvertTaskInput[]) =>
+      json<{ ok: boolean }>(url('/api/convert'), {
+        method: 'POST',
+        body: JSON.stringify({ tasks }),
+      }),
+    cancelAll: () =>
+      json<{ ok: boolean }>(url('/api/cancel'), {
+        method: 'POST',
+        body: '{}',
+      }),
+    cancelTask: (taskId: string) =>
+      json<{ ok: boolean }>(url(`/api/cancel/${encodeURIComponent(taskId)}`), {
+        method: 'POST',
+        body: '{}',
+      }),
+    batch: () => json<BatchSnapshot>(url('/api/batch')),
+    ffmpegStatus: () =>
+      json<{ available: boolean; message: string }>(url('/api/ffmpeg-status')),
+  }
 }
+
+export type ApiClient = ReturnType<typeof createApi>
+
+export const api = createApi()

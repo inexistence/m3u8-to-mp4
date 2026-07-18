@@ -4,6 +4,25 @@
   padding: 24px 0;
 }
 
+.startup-gate {
+  display: grid;
+  width: min(520px, calc(100% - 32px));
+  min-height: 60vh;
+  margin: 0 auto;
+  text-align: center;
+  place-content: center;
+  justify-items: center;
+}
+
+.startup-gate h1 {
+  margin-bottom: 4px;
+}
+
+.startup-gate p {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+}
+
 .top-bar,
 .output-bar,
 .toolbar,

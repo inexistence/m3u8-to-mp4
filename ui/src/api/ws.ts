@@ -5,8 +5,13 @@ type CloseListener = () => void
 
 class SidecarWebSocket {
   private socket: WebSocket | null = null
+  private baseUrl = ''
   private readonly listeners = new Set<EventListener>()
   private readonly closeListeners = new Set<CloseListener>()
+
+  setBaseUrl(baseUrl: string): void {
+    this.baseUrl = baseUrl.replace(/\/$/, '')
+  }
 
   connect(): void {
     if (
@@ -16,8 +21,9 @@ class SidecarWebSocket {
       return
     }
 
-    const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-    const socket = new WebSocket(`${protocol}://${location.host}/ws`)
+    const source = this.baseUrl ? new URL(this.baseUrl) : location
+    const protocol = source.protocol === 'https:' ? 'wss' : 'ws'
+    const socket = new WebSocket(`${protocol}://${source.host}/ws`)
     this.socket = socket
     socket.onmessage = (message) => {
       const event = JSON.parse(String(message.data)) as SidecarEvent
