@@ -176,6 +176,68 @@ describe('App sidecar wiring', () => {
     ).toBeTruthy()
   })
 
+  it('expands and copies failed task error details', async () => {
+    vi.spyOn(api, 'scan').mockResolvedValue({
+      entries: [
+        {
+          task_id: 'task-error',
+          path: 'C:\\videos\\error.m3u8',
+          is_master_playlist: false,
+          stream_labels: [],
+          selected_stream_index: 0,
+        },
+      ],
+      added: 1,
+      duplicates: 0,
+      unparseable: 0,
+      message: '已添加 1 个任务',
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    render(<App />)
+    fireEvent.change(screen.getByLabelText('路径列表'), {
+      target: { value: 'C:\\videos\\error.m3u8' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '添加到队列' }))
+    expect(await screen.findByText('error.m3u8')).toBeTruthy()
+
+    act(() => {
+      emitEvent({
+        type: 'task_error',
+        task_id: 'task-error',
+        message: '转换失败',
+        done_count: 1,
+        total_count: 1,
+        progress_percent: null,
+        progress_phase: '',
+        status: 'error',
+        error_message: 'ffmpeg exited with code 1',
+      })
+    })
+
+    expect(screen.queryByText('ffmpeg exited with code 1')).toBeNull()
+    fireEvent.click(screen.getByText('error.m3u8'))
+    expect(screen.getByText('ffmpeg exited with code 1')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '复制错误' }))
+    expect(writeText).toHaveBeenCalledWith('ffmpeg exited with code 1')
+    fireEvent.click(screen.getByText('error.m3u8'))
+    expect(screen.queryByText('ffmpeg exited with code 1')).toBeNull()
+  })
+
+  it('uses absolute path paste without misleading browser picker buttons', () => {
+    render(<App />)
+
+    expect(
+      screen.getByText('桌面版将支持拖放与原生选文件；当前请粘贴绝对路径'),
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '选择文件' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '选择文件夹' })).toBeNull()
+  })
+
   it('reconnects after a close and merges the batch snapshot', async () => {
     vi.spyOn(api, 'batch')
       .mockResolvedValueOnce({ is_converting: false, tasks: [] })
@@ -314,6 +376,20 @@ describe('App sidecar wiring', () => {
     expect(screen.getByRole('button', { name: '指定目录' }).className).toContain(
       'segmented__active',
     )
+  })
+
+  it('rolls back the output directory when saving fails', async () => {
+    vi.spyOn(api, 'putConfig').mockRejectedValue(new Error('disk full'))
+
+    render(<App />)
+    await waitFor(() => expect(api.getConfig).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: '指定目录' }))
+    const input = screen.getByLabelText('输出目录') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'D:\\converted' } })
+    fireEvent.blur(input)
+
+    await screen.findByText(/保存输出目录失败/)
+    expect(input.value).toBe('')
   })
 })
 

@@ -255,6 +255,16 @@ select {
   gap: 4px;
 }
 
+.task-row__main--expandable {
+  cursor: pointer;
+}
+
+.task-row__main--expandable:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .task-row__title {
   display: flex;
   align-items: center;
@@ -282,6 +292,16 @@ select {
   color: var(--error);
   background: var(--surface-muted);
   white-space: pre-wrap;
+}
+
+.task-row__error-details {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.task-row__error-details .task-row__error {
+  flex: 1;
 }
 
 .task-row__options {

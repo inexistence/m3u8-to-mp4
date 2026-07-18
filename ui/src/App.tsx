@@ -290,12 +290,14 @@ function App() {
   }
 
   const changeOutputDirectory = async (outputDirectory: string | null) => {
+    const previousConfig = state.config
     const config = { ...state.config, output_directory: outputDirectory }
     dispatch({ type: 'HYDRATE_CONFIG', config })
     try {
       const saved = await api.putConfig(config)
       dispatch({ type: 'HYDRATE_CONFIG', config: saved })
     } catch (error) {
+      dispatch({ type: 'HYDRATE_CONFIG', config: previousConfig })
       dispatch({ type: 'SET_FEEDBACK', feedback: `保存输出目录失败：${String(error)}` })
     }
   }
@@ -346,6 +348,9 @@ function App() {
           dispatch({ type: 'SET_STREAM', taskId, streamIndex })
         }
         onToggle={(taskId) => dispatch({ type: 'TOGGLE_TASK', taskId })}
+        onToggleError={(taskId) =>
+          dispatch({ type: 'TOGGLE_ERROR_EXPANDED', taskId })
+        }
       />
       {settingsOpen && (
         <SettingsModal

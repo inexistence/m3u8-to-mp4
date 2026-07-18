@@ -8,6 +8,7 @@ interface TaskRowProps {
   onToggle: () => void
   onStreamChange: (index: number) => void
   onCancel: () => void
+  onToggleError: () => void
 }
 
 const statusText: Record<QueueTask['status'], string> = {
@@ -26,7 +27,10 @@ export function TaskRow({
   onToggle,
   onStreamChange,
   onCancel,
+  onToggleError,
 }: TaskRowProps) {
+  const hasError = task.status === 'error' && Boolean(task.errorMessage)
+
   return (
     <article className={`task-row task-row--${task.status}`}>
       <input
@@ -36,14 +40,44 @@ export function TaskRow({
         type="checkbox"
         onChange={onToggle}
       />
-      <div className="task-row__main">
+      <div
+        aria-expanded={hasError ? task.errorExpanded : undefined}
+        className={`task-row__main${hasError ? ' task-row__main--expandable' : ''}`}
+        role={hasError ? 'button' : undefined}
+        tabIndex={hasError ? 0 : undefined}
+        onClick={hasError ? onToggleError : undefined}
+        onKeyDown={
+          hasError
+            ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onToggleError()
+                }
+              }
+            : undefined
+        }
+      >
         <div className="task-row__title">
           <strong title={task.path}>{task.name}</strong>
           <span className={`status-pill status-pill--${task.status}`}>{statusText[task.status]}</span>
         </div>
         <span className="task-row__directory">{task.directory || task.path}</span>
         {task.progressMessage && <span className="task-row__message">{task.progressMessage}</span>}
-        {task.errorMessage && <pre className="task-row__error">{task.errorMessage}</pre>}
+        {hasError && task.errorExpanded && (
+          <div className="task-row__error-details">
+            <pre className="task-row__error">{task.errorMessage}</pre>
+            <button
+              className="button button--secondary button--small"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                void navigator.clipboard.writeText(task.errorMessage)
+              }}
+            >
+              复制错误
+            </button>
+          </div>
+        )}
         {task.progressPercent !== null && (
           <div
             aria-valuemax={100}

@@ -19,6 +19,7 @@ export type QueueAction =
     }
   | { type: 'TOGGLE_TASK'; taskId: string }
   | { type: 'SET_STREAM'; taskId: string; streamIndex: number }
+  | { type: 'TOGGLE_ERROR_EXPANDED'; taskId: string }
   | { type: 'SELECT_ALL'; selected?: boolean }
   | { type: 'CLEAR' }
   | { type: 'START_BATCH' }
@@ -123,6 +124,16 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
           selectedStreamIndex: action.streamIndex,
         }),
       }
+    case 'TOGGLE_ERROR_EXPANDED': {
+      const task = state.tasks.find((item) => item.id === action.taskId)
+      if (!task?.errorMessage) return state
+      return {
+        ...state,
+        tasks: patchTask(state.tasks, action.taskId, {
+          errorExpanded: !task.errorExpanded,
+        }),
+      }
+    }
     case 'SELECT_ALL': {
       if (state.isConverting) {
         return state
@@ -146,7 +157,9 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
           task.selected
             ? {
                 ...task,
+                status: 'pending',
                 errorMessage: '',
+                errorExpanded: false,
                 progressPercent: null,
                 progressPhase: '',
                 progressMessage: '',

@@ -11,6 +11,7 @@ interface TaskListProps {
   onToggle: (taskId: string) => void
   onStreamChange: (taskId: string, index: number) => void
   onCancel: (taskId: string) => void
+  onToggleError: (taskId: string) => void
 }
 
 export function TaskList({
@@ -22,9 +23,10 @@ export function TaskList({
   onToggle,
   onStreamChange,
   onCancel,
+  onToggleError,
 }: TaskListProps) {
   if (tasks.length === 0) {
-    return <div className="empty-state">队列为空，请粘贴路径或选择 .m3u8 文件添加任务</div>
+    return <div className="empty-state">队列为空，请粘贴 .m3u8 文件或目录的绝对路径</div>
   }
 
   return (
@@ -51,6 +53,7 @@ export function TaskList({
               onCancel={() => onCancel(task.id)}
               onStreamChange={(index) => onStreamChange(task.id, index)}
               onToggle={() => onToggle(task.id)}
+              onToggleError={() => onToggleError(task.id)}
             />
           </motion.div>
         ))}

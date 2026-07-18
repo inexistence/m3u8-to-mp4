@@ -77,7 +77,7 @@ describe('queueReducer', () => {
     expect(state.tasks[1]).toBe(beforeSecond)
   })
 
-  it('freezes selected ids and clears stale selected-task errors on START_BATCH', () => {
+  it('resets selected completed tasks for a new cancellable batch on START_BATCH', () => {
     let state = queueReducer(initialQueueState, {
       type: 'ADD_ENTRIES',
       entries: [
@@ -85,6 +85,7 @@ describe('queueReducer', () => {
           id: '1',
           path: 'C:/a/index.m3u8',
           selected: true,
+          status: 'error',
           errorMessage: 'old failure',
           progressPercent: 75,
           progressPhase: 'download',
@@ -103,11 +104,33 @@ describe('queueReducer', () => {
     expect(state.isConverting).toBe(true)
     expect(state.activeBatchIds).toEqual(['1'])
     expect(state.tasks[0]).toMatchObject({
+      status: 'pending',
       errorMessage: '',
       progressPercent: null,
       progressPhase: '',
       progressMessage: '',
     })
     expect(state.tasks[1].errorMessage).toBe('keep me')
+  })
+
+  it('toggles error details for a failed task', () => {
+    let state = queueReducer(initialQueueState, {
+      type: 'ADD_ENTRIES',
+      entries: [
+        task({
+          id: '1',
+          path: 'C:/a/index.m3u8',
+          status: 'error',
+          errorMessage: 'ffmpeg failed',
+        }),
+      ],
+      feedback: '',
+    })
+
+    state = queueReducer(state, { type: 'TOGGLE_ERROR_EXPANDED', taskId: '1' })
+    expect(state.tasks[0].errorExpanded).toBe(true)
+
+    state = queueReducer(state, { type: 'TOGGLE_ERROR_EXPANDED', taskId: '1' })
+    expect(state.tasks[0].errorExpanded).toBe(false)
   })
 })
