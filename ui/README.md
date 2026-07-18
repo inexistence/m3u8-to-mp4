@@ -1,3 +1,20 @@
+# UI 开发
+
+1. 在项目根目录启动 sidecar：
+
+   ```powershell
+   $env:M3U8_SIDECAR_PORT=8765
+   python -m sidecar
+   ```
+
+2. 在 `ui` 目录安装依赖并启动开发服务器：
+
+   ```powershell
+   npm install
+   npm run dev
+   ```
+
+3. 在浏览器打开 http://127.0.0.1:5173。
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.

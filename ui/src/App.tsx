@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { api } from './api/client'
 import { ws } from './api/ws'
 import { DropZone } from './components/DropZone'
@@ -59,6 +59,11 @@ function App() {
   const [ffmpegMessage, setFfmpegMessage] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [outputMode, setOutputMode] = useState<'source' | 'custom'>('source')
+  const [cancellingAll, setCancellingAll] = useState(false)
+  const [cancellingTaskIds, setCancellingTaskIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const batchStatuses = useRef(new Map<string, QueueTask['status']>())
 
   useEffect(() => {
     let active = true
@@ -94,6 +99,7 @@ function App() {
         if (!active) return
         dispatch({ type: 'SET_CONVERTING', isConverting: batch.is_converting })
         for (const task of batch.tasks) {
+          batchStatuses.current.set(task.task_id, task.status)
           dispatch({
             type: 'PATCH_TASK',
             taskId: task.task_id,
@@ -114,20 +120,38 @@ function App() {
   }, [])
 
   useEffect(() => {
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+
     const unsubscribe = ws.onEvent((event) => {
       if (event.type === 'batch_finished') {
-        const feedback = event.error_message
-          ? `转换批次失败：${event.error_message}`
-          : `转换完成：${event.done_count} / ${event.total_count}`
+        const statuses = [...batchStatuses.current.values()]
+        const success = statuses.filter((status) => status === 'done').length
+        const failed = statuses.filter((status) => status === 'error').length
+        const cancelled = statuses.filter((status) => status === 'skipped').length
+        const feedback = `本批完成：成功 ${success}，失败 ${failed}，取消 ${cancelled}`
         dispatch({ type: 'BATCH_FINISHED', feedback })
+        batchStatuses.current.clear()
+        setCancellingAll(false)
+        setCancellingTaskIds(new Set())
         return
       }
       if (event.task_id) {
+        if (event.status) {
+          batchStatuses.current.set(event.task_id, event.status)
+        }
         dispatch({
           type: 'PATCH_TASK',
           taskId: event.task_id,
           patch: patchFromEvent(event),
         })
+        if (event.status === 'done' || event.status === 'error' || event.status === 'skipped') {
+          setCancellingTaskIds((current) => {
+            if (!current.has(event.task_id)) return current
+            const next = new Set(current)
+            next.delete(event.task_id)
+            return next
+          })
+        }
       }
       if (event.type === 'batch_progress') {
         dispatch({
@@ -136,9 +160,41 @@ function App() {
         })
       }
     })
+    const unsubscribeClose = ws.onClose(() => {
+      if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(() => {
+        ws.connect()
+        void api
+          .batch()
+          .then((batch) => {
+            dispatch({ type: 'SET_CONVERTING', isConverting: batch.is_converting })
+            for (const task of batch.tasks) {
+              batchStatuses.current.set(task.task_id, task.status)
+              dispatch({
+                type: 'PATCH_TASK',
+                taskId: task.task_id,
+                patch: {
+                  status: task.status,
+                  errorMessage: task.error_message,
+                  progressPercent: task.progress_percent,
+                  progressPhase: task.progress_phase,
+                  progressMessage: task.message,
+                },
+              })
+            }
+            if (!batch.is_converting) {
+              setCancellingAll(false)
+              setCancellingTaskIds(new Set())
+            }
+          })
+          .catch(() => undefined)
+      }, 1000)
+    })
     ws.connect()
     return () => {
+      if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
       unsubscribe()
+      unsubscribeClose()
       ws.disconnect()
     }
   }, [])
@@ -162,19 +218,50 @@ function App() {
   }
 
   const startConversion = async () => {
+    const activeTasks = selectedTasks
     dispatch({ type: 'START_BATCH' })
+    batchStatuses.current = new Map(
+      activeTasks.map((task) => [task.id, 'pending' as const]),
+    )
+    setCancellingAll(false)
+    setCancellingTaskIds(new Set())
     try {
       await api.convert(
-        selectedTasks.map((task) => ({
+        activeTasks.map((task) => ({
           task_id: task.id,
           path: task.path,
           selected_stream_index: task.selectedStreamIndex,
           is_master_playlist: task.isMasterPlaylist,
         })),
       )
-      dispatch({ type: 'SET_FEEDBACK', feedback: `已开始转换 ${selectedTasks.length} 个任务` })
+      dispatch({ type: 'SET_FEEDBACK', feedback: `已开始转换 ${activeTasks.length} 个任务` })
     } catch (error) {
+      batchStatuses.current.clear()
       dispatch({ type: 'BATCH_FINISHED', feedback: `启动转换失败：${String(error)}` })
+    }
+  }
+
+  const cancelAll = async () => {
+    setCancellingAll(true)
+    try {
+      await api.cancelAll()
+    } catch (error) {
+      setCancellingAll(false)
+      dispatch({ type: 'SET_FEEDBACK', feedback: `取消失败：${String(error)}` })
+    }
+  }
+
+  const cancelTask = async (taskId: string) => {
+    setCancellingTaskIds((current) => new Set(current).add(taskId))
+    try {
+      await api.cancelTask(taskId)
+    } catch (error) {
+      setCancellingTaskIds((current) => {
+        const next = new Set(current)
+        next.delete(taskId)
+        return next
+      })
+      dispatch({ type: 'SET_FEEDBACK', feedback: `取消任务失败：${String(error)}` })
     }
   }
 
@@ -220,10 +307,11 @@ function App() {
       <Toolbar
         canStart={selectedTasks.length > 0 && !state.isConverting && ffmpegAvailable}
         feedback={state.feedback}
+        isCancelling={cancellingAll}
         isConverting={state.isConverting}
         selected={selectedTasks.length}
         total={state.tasks.length}
-        onCancelAll={() => void api.cancelAll()}
+        onCancelAll={() => void cancelAll()}
         onClear={() => dispatch({ type: 'CLEAR' })}
         onSelectAll={() => dispatch({ type: 'SELECT_ALL' })}
         onStart={() => void startConversion()}
@@ -231,9 +319,11 @@ function App() {
       <DropZone disabled={state.isConverting} onAdd={addPaths} />
       <TaskList
         activeBatchIds={state.activeBatchIds}
+        cancellingAll={cancellingAll}
+        cancellingTaskIds={cancellingTaskIds}
         isConverting={state.isConverting}
         tasks={state.tasks}
-        onCancel={(taskId) => void api.cancelTask(taskId)}
+        onCancel={(taskId) => void cancelTask(taskId)}
         onStreamChange={(taskId, streamIndex) =>
           dispatch({ type: 'SET_STREAM', taskId, streamIndex })
         }

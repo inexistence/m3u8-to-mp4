@@ -6,6 +6,8 @@ interface TaskListProps {
   tasks: QueueTask[]
   isConverting: boolean
   activeBatchIds: string[]
+  cancellingAll: boolean
+  cancellingTaskIds: Set<string>
   onToggle: (taskId: string) => void
   onStreamChange: (taskId: string, index: number) => void
   onCancel: (taskId: string) => void
@@ -15,6 +17,8 @@ export function TaskList({
   tasks,
   isConverting,
   activeBatchIds,
+  cancellingAll,
+  cancellingTaskIds,
   onToggle,
   onStreamChange,
   onCancel,
@@ -36,6 +40,7 @@ export function TaskList({
             transition={{ duration: 0.18 }}
           >
             <TaskRow
+              cancelling={cancellingAll || cancellingTaskIds.has(task.id)}
               cancellable={
                 isConverting &&
                 activeBatchIds.includes(task.id) &&

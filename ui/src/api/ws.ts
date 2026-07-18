@@ -1,10 +1,12 @@
 import type { SidecarEvent } from '../types'
 
 type EventListener = (event: SidecarEvent) => void
+type CloseListener = () => void
 
 class SidecarWebSocket {
   private socket: WebSocket | null = null
   private readonly listeners = new Set<EventListener>()
+  private readonly closeListeners = new Set<CloseListener>()
 
   connect(): void {
     if (
@@ -26,6 +28,9 @@ class SidecarWebSocket {
     socket.onclose = (event) => {
       if (event.target === this.socket) {
         this.socket = null
+        for (const listener of this.closeListeners) {
+          listener()
+        }
       }
     }
   }
@@ -43,6 +48,13 @@ class SidecarWebSocket {
     this.listeners.add(listener)
     return () => {
       this.listeners.delete(listener)
+    }
+  }
+
+  onClose(listener: CloseListener): () => void {
+    this.closeListeners.add(listener)
+    return () => {
+      this.closeListeners.delete(listener)
     }
   }
 }

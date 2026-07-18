@@ -3,6 +3,7 @@ interface ToolbarProps {
   selected: number
   feedback: string
   isConverting: boolean
+  isCancelling: boolean
   canStart: boolean
   onSelectAll: () => void
   onClear: () => void
@@ -15,6 +16,7 @@ export function Toolbar({
   selected,
   feedback,
   isConverting,
+  isCancelling,
   canStart,
   onSelectAll,
   onClear,
@@ -36,8 +38,13 @@ export function Toolbar({
       <span className="toolbar__feedback">{feedback}</span>
       <div className="toolbar__actions">
         {isConverting ? (
-          <button className="button button--danger" type="button" onClick={onCancelAll}>
-            取消全部
+          <button
+            className="button button--danger"
+            disabled={isCancelling}
+            type="button"
+            onClick={onCancelAll}
+          >
+            {isCancelling ? '正在取消…' : '取消全部'}
           </button>
         ) : (
           <button className="button button--primary" disabled={!canStart} type="button" onClick={onStart}>

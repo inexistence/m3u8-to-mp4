@@ -4,6 +4,7 @@ interface TaskRowProps {
   task: QueueTask
   disabled: boolean
   cancellable: boolean
+  cancelling: boolean
   onToggle: () => void
   onStreamChange: (index: number) => void
   onCancel: () => void
@@ -21,6 +22,7 @@ export function TaskRow({
   task,
   disabled,
   cancellable,
+  cancelling,
   onToggle,
   onStreamChange,
   onCancel,
@@ -76,8 +78,13 @@ export function TaskRow({
           </select>
         )}
         {cancellable && (
-          <button className="button button--danger button--small" type="button" onClick={onCancel}>
-            取消
+          <button
+            className="button button--danger button--small"
+            disabled={cancelling}
+            type="button"
+            onClick={onCancel}
+          >
+            {cancelling ? '正在取消…' : '取消'}
           </button>
         )}
       </div>
