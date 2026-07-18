@@ -77,17 +77,37 @@ describe('queueReducer', () => {
     expect(state.tasks[1]).toBe(beforeSecond)
   })
 
-  it('freezes selected ids on START_BATCH', () => {
+  it('freezes selected ids and clears stale selected-task errors on START_BATCH', () => {
     let state = queueReducer(initialQueueState, {
       type: 'ADD_ENTRIES',
       entries: [
-        task({ id: '1', path: 'C:/a/index.m3u8', selected: true }),
-        task({ id: '2', path: 'C:/b/index.m3u8', selected: false }),
+        task({
+          id: '1',
+          path: 'C:/a/index.m3u8',
+          selected: true,
+          errorMessage: 'old failure',
+          progressPercent: 75,
+          progressPhase: 'download',
+          progressMessage: 'old progress',
+        }),
+        task({
+          id: '2',
+          path: 'C:/b/index.m3u8',
+          selected: false,
+          errorMessage: 'keep me',
+        }),
       ],
       feedback: '',
     })
     state = queueReducer(state, { type: 'START_BATCH' })
     expect(state.isConverting).toBe(true)
     expect(state.activeBatchIds).toEqual(['1'])
+    expect(state.tasks[0]).toMatchObject({
+      errorMessage: '',
+      progressPercent: null,
+      progressPhase: '',
+      progressMessage: '',
+    })
+    expect(state.tasks[1].errorMessage).toBe('keep me')
   })
 })

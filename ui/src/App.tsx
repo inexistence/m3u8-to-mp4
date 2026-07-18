@@ -37,14 +37,18 @@ function queueTaskFromScan(entry: ScanEntry): QueueTask {
   }
 }
 
-function patchFromEvent(event: SidecarEvent): Partial<QueueTask> {
+export function patchFromEvent(event: SidecarEvent): Partial<QueueTask> {
   const patch: Partial<QueueTask> = {
     progressMessage: event.message,
     progressPercent: event.progress_percent,
     progressPhase: event.progress_phase,
   }
   if (event.status) patch.status = event.status
-  if (event.error_message) patch.errorMessage = event.error_message
+  if (event.error_message !== undefined) {
+    patch.errorMessage = event.error_message
+  } else if (event.status === 'done' || event.status === 'pending') {
+    patch.errorMessage = ''
+  }
   return patch
 }
 
@@ -54,6 +58,7 @@ function App() {
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false)
   const [ffmpegMessage, setFfmpegMessage] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [outputMode, setOutputMode] = useState<'source' | 'custom'>('source')
 
   useEffect(() => {
     let active = true
@@ -63,7 +68,11 @@ function App() {
       .catch(() => active && setSidecarReady(false))
     void api
       .getConfig()
-      .then((config) => active && dispatch({ type: 'HYDRATE_CONFIG', config }))
+      .then((config) => {
+        if (!active) return
+        dispatch({ type: 'HYDRATE_CONFIG', config })
+        setOutputMode(config.output_directory ? 'custom' : 'source')
+      })
       .catch((error: unknown) => {
         if (active) dispatch({ type: 'SET_FEEDBACK', feedback: `读取设置失败：${String(error)}` })
       })
@@ -186,6 +195,13 @@ function App() {
     }
   }
 
+  const changeOutputMode = (mode: 'source' | 'custom') => {
+    setOutputMode(mode)
+    if (mode === 'source') {
+      void changeOutputDirectory(null)
+    }
+  }
+
   return (
     <main className="app-shell">
       <TopBar
@@ -197,7 +213,9 @@ function App() {
       <OutputBar
         disabled={state.isConverting}
         outputDirectory={state.config.output_directory as string | null | undefined}
-        onChange={(directory) => void changeOutputDirectory(directory)}
+        outputMode={outputMode}
+        onDirectoryChange={(directory) => void changeOutputDirectory(directory)}
+        onModeChange={changeOutputMode}
       />
       <Toolbar
         canStart={selectedTasks.length > 0 && !state.isConverting && ffmpegAvailable}

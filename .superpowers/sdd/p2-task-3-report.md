@@ -27,3 +27,15 @@ Completed.
 ## Commit
 
 `feat: build React conversion queue UI wired to sidecar`
+
+## Important Review Fixes
+
+- Decoupled the output mode from `output_directory`, so choosing custom mode keeps the path field enabled without persisting an empty path; a non-empty path persists on blur, while source mode immediately saves `null`.
+- Reset stale error and progress details for selected tasks when retrying a batch.
+- Clear stale task errors when events explicitly contain an empty error or report a pending/done task without an error.
+- Added focused reducer, output-mode, and event-patching tests.
+
+## Review Fix Verification
+
+- `npm test`: 2 files, 9 tests passed.
+- `npm run build`: TypeScript and Vite production build passed.

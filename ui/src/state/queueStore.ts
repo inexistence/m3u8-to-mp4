@@ -142,6 +142,17 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
       return {
         ...state,
         isConverting: true,
+        tasks: state.tasks.map((task) =>
+          task.selected
+            ? {
+                ...task,
+                errorMessage: '',
+                progressPercent: null,
+                progressPhase: '',
+                progressMessage: '',
+              }
+            : task,
+        ),
         activeBatchIds: state.tasks
           .filter((task) => task.selected)
           .map((task) => task.id),

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import App from './App'
+import App, { patchFromEvent } from './App'
 import { api } from './api/client'
 import { ws } from './api/ws'
 
@@ -87,5 +87,54 @@ describe('App sidecar wiring', () => {
         expect.objectContaining({ max_parallel_conversions: 4 }),
       )
     })
+  })
+
+  it('keeps custom output mode active until a path is entered', async () => {
+    const putConfig = vi.spyOn(api, 'putConfig').mockImplementation(async (config) => config)
+
+    render(<App />)
+
+    await waitFor(() => expect(api.getConfig).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: '指定目录' }))
+
+    const input = screen.getByLabelText('输出目录') as HTMLInputElement
+    expect(input.disabled).toBe(false)
+    expect(putConfig).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: 'D:\\converted' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => {
+      expect(putConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ output_directory: 'D:\\converted' }),
+      )
+    })
+    expect(screen.getByRole('button', { name: '指定目录' }).className).toContain(
+      'segmented__active',
+    )
+  })
+})
+
+describe('patchFromEvent', () => {
+  const event = {
+    type: 'task_progress',
+    task_id: 'task-1',
+    message: '',
+    done_count: 0,
+    total_count: 1,
+    progress_percent: null,
+    progress_phase: '',
+    status: 'done' as const,
+    error_message: '',
+  }
+
+  it('clears an error when an event carries an empty error message', () => {
+    expect(patchFromEvent(event).errorMessage).toBe('')
+  })
+
+  it('clears an error for a done event without an error field', () => {
+    const withoutError = { ...event } as Partial<typeof event>
+    delete withoutError.error_message
+    expect(patchFromEvent(withoutError as typeof event).errorMessage).toBe('')
   })
 })
