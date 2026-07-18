@@ -8,6 +8,7 @@ from typing import Callable
 import customtkinter as ctk
 from tkinterdnd2 import DND_FILES
 
+from core.queue_messages import batch_feedback, conversion_feedback, scan_feedback
 from gui import theme as t
 from gui.drop_zone import DropZone
 from gui.models import ConversionTask, TaskStatus
@@ -40,25 +41,6 @@ def output_destination_detail(output_directory: str | None) -> str:
 def completed_task_summary() -> str:
     """返回已完成任务的最终阶段摘要。"""
     return '合片完成 · FFmpeg 封装完成'
-
-
-def scan_feedback(added: int, duplicates: int, unparseable: int, total: int) -> str:
-    """返回单行扫描结果，供工具栏内的提示区替换显示。"""
-    return f'扫描完成：添加 {added}，重复 {duplicates}，无法解析 {unparseable}；共 {total} 个任务'
-
-
-def conversion_feedback(done_count: int, total_count: int) -> str:
-    """返回当前批次的单行转换状态。"""
-    current = min(done_count + 1, total_count)
-    return f'转换中：正在处理第 {current}/{total_count} 个任务'
-
-
-def batch_feedback(success: int, failed: int, cancelled: int) -> str:
-    """返回单行批次结果；失败时引导用户查看对应任务详情。"""
-    message = f'本批完成：成功 {success}，失败 {failed}，取消 {cancelled}'
-    if failed:
-        return f'{message}；点击失败任务可查看详情'
-    return message
 
 
 def _short_path(path: Path) -> tuple[str, str]:
