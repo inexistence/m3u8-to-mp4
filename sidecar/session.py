@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import threading
 from pathlib import Path
 
@@ -64,6 +65,8 @@ class SidecarSession:
 
     def put_config(self, data: dict) -> dict:
         with self._lock:
+            if self._is_converting:
+                raise RuntimeError('cannot update config while converting')
             self.global_config.apply_local_dict(data)
             save_local_config(self.global_config)
             return self.global_config.to_local_dict()
@@ -76,6 +79,12 @@ class SidecarSession:
         with self._lock:
             if self._is_converting:
                 raise RuntimeError('conversion already running')
+            if not tasks:
+                raise ValueError('task list must not be empty')
+
+            task_ids = [item.task_id for item in tasks]
+            if len(task_ids) != len(set(task_ids)):
+                raise ValueError('duplicate task_id in conversion request')
 
             batch: list[tuple[str, ConversionTask]] = []
             for item in tasks:
@@ -83,6 +92,7 @@ class SidecarSession:
                 entry.selected_stream_index = item.selected_stream_index
                 batch.append((item.task_id, ConversionTask(entry=entry)))
 
+            batch_config = copy.deepcopy(self.global_config)
             self._batch = batch
             self._task_progress = [
                 {'progress_percent': None, 'progress_phase': '', 'message': ''}
@@ -90,7 +100,11 @@ class SidecarSession:
             ]
             self._cancel = BatchCancelController.for_tasks(len(batch))
             self._is_converting = True
-            self._thread = threading.Thread(target=self._run_batch, daemon=True)
+            self._thread = threading.Thread(
+                target=self._run_batch,
+                args=(batch_config,),
+                daemon=True,
+            )
             self._thread.start()
 
     def cancel_all(self) -> None:
@@ -148,7 +162,7 @@ class SidecarSession:
             'error_message': error_message,
         }
 
-    def _run_batch(self) -> None:
+    def _run_batch(self, batch_config: GlobalConfig) -> None:
         with self._lock:
             batch = list(self._batch)
             cancel = self._cancel
@@ -248,7 +262,7 @@ class SidecarSession:
         try:
             run_batch_conversions(
                 [task for _, task in batch],
-                self.global_config,
+                batch_config,
                 cancel=cancel,
                 callbacks=callbacks,
             )
