@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from scripts.release_notes import (
     build_notes,
     extract_changelog_section,

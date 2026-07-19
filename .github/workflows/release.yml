@@ -19,6 +19,17 @@ on:
 permissions:
   contents: write
 
+# Serialize release jobs for the same version so workflow_dispatch tag-create
+# and the resulting push:tags run cannot race on `gh release create`.
+concurrency:
+  group: >-
+    release-${{
+      github.event_name == 'workflow_dispatch'
+      && (startsWith(inputs.version, 'v') && inputs.version || format('v{0}', inputs.version))
+      || github.ref_name
+    }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: windows-latest
@@ -59,7 +70,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
-            echo "Tag $VERSION already exists"
+            echo "Tag $VERSION already exists; checking out tag so assets match"
+            git checkout --force "$VERSION"
           else
             git tag -a "$VERSION" -m "$VERSION"
             git push origin "refs/tags/$VERSION"
