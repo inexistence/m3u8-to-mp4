@@ -6,4 +6,4 @@ dist/
 src-tauri/binaries/*.exe
 .worktrees/
 docs/superpowers/
-.superpowers
+.superpowers/
