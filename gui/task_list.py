@@ -38,8 +38,8 @@ def output_destination_detail(output_directory: str | None) -> str:
 
 
 def completed_task_summary() -> str:
-    """返回已完成任务的最终阶段摘要。"""
-    return '合片完成 · FFmpeg 封装完成'
+    """返回已完成任务的最终摘要。"""
+    return '转换完成'
 
 
 def scan_feedback(added: int, duplicates: int, unparseable: int, total: int) -> str:
@@ -344,7 +344,7 @@ class TaskRow(ctk.CTkFrame):
 
     def set_progress(self, phase: str, message: str, percent: int | None) -> None:
         """仅由主线程调用，以当前真实阶段更新唯一进度条。"""
-        if phase not in {'merging', 'packaging'}:
+        if phase != 'converting':
             return
         self.progress_label.configure(text=message, text_color=t.ACCENT if percent is not None else t.WARNING)
         self.progress.grid()

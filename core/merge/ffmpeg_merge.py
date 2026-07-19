@@ -2,10 +2,8 @@
 import ffmpeg
 from core.merge.ts_merge import TsMerger
 from pathlib import Path
-import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 from typing import Callable
 
@@ -15,21 +13,10 @@ from core.utils.cancellation import ConversionCancelled
 from core.utils.ffmpeg_check import ensure_ffmpeg
 
 
-def parse_ffmpeg_progress_line(line: str) -> int | None:
-    """从 FFmpeg machine-readable progress 输出中取出 out_time_ms。"""
-    key, separator, value = line.strip().partition('=')
-    if key != 'out_time_ms' or not separator:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
 class FfmpegMerger(TsMerger):
-    """将分片流式写入临时 merged.ts，再由 FFmpeg 以 copy 模式封装为 MP4。
+    """解密后的 TS 分片经管道流式喂给 FFmpeg，以 copy 模式封装为 MP4。
 
-    相比逐分片建临时文件，单文件流式写入在大量分片时性能更好，且跨平台兼容。
+    不落盘中间 merged.ts：start 时启动 ffmpeg，append 写 stdin，finish 关闭管道并等待退出。
     """
 
     def __init__(
@@ -42,16 +29,13 @@ class FfmpegMerger(TsMerger):
             self.target_file_path = Path(target_file_path)
         else:
             self.target_file_path = target_file_path
-        self.tmp_dir = None
-        self.merged_ts_path = None
-        self.merged_ts_file = None
         self._pbar: tqdm | None = None
         self._progress_callback = progress_callback
         self._progress_total = 0
         self._progress_current = 0
-        self._media_duration_ms: int | None = None
         self._cancel_event = cancel_event
         self._process: subprocess.Popen | None = None
+        self._command: list[str] = []
 
     @staticmethod
     def _can_report_progress() -> bool:
@@ -62,116 +46,123 @@ class FfmpegMerger(TsMerger):
         if self._cancel_event is not None and self._cancel_event.is_set():
             raise ConversionCancelled()
 
-    def _cleanup_temp(self) -> None:
-        if self.merged_ts_file is not None:
-            self.merged_ts_file.close()
-            self.merged_ts_file = None
-        if self.tmp_dir is not None:
-            shutil.rmtree(self.tmp_dir, ignore_errors=True)
-            self.tmp_dir = None
-
     def _remove_incomplete_output(self) -> None:
         try:
             self.target_file_path.unlink(missing_ok=True)
         except OSError:
             pass
 
+    def _close_stdin(self) -> None:
+        process = self._process
+        if process is None or process.stdin is None or process.stdin.closed:
+            return
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
+
+    def _terminate_process(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        self._close_stdin()
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+    def _wait_for_ffmpeg(self, command: list[str]) -> None:
+        process = self._process
+        if process is None:
+            return
+        self._raise_if_cancelled()
+        returncode = process.wait()
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, command)
+
     def start(self):
-        tmp_dir_name = tempfile.mkdtemp()
-        self.tmp_dir = Path(tmp_dir_name)
-        self.merged_ts_path = self.tmp_dir / 'merged.ts'
-        self.merged_ts_file = open(self.merged_ts_path, 'wb')
+        self._raise_if_cancelled()
+        stream = (
+            ffmpeg.input('pipe:0', f='mpegts')
+            .output(str(self.target_file_path), c='copy')
+            .overwrite_output()
+        )
+        command = stream.compile(cmd=ensure_ffmpeg())
         if self._can_report_progress():
-            tqdm.write(f'tmp dir {tmp_dir_name}')
+            tqdm.write('streaming to ffmpeg...')
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+        self._process = process
+        self._command = command
 
     def set_progress_total(self, total: int):
         self._progress_total = total
         self._progress_current = 0
         if self._progress_callback is not None:
-            self._progress_callback('merging', 0, total)
+            self._progress_callback('converting', 0, total)
         if self._can_report_progress():
-            self._pbar = tqdm(total=total, unit='seg', desc='merging', dynamic_ncols=True)
+            self._pbar = tqdm(total=total, unit='seg', desc='converting', dynamic_ncols=True)
 
     def append(self, data: bytearray):
-        self.merged_ts_file.write(data)
+        self._raise_if_cancelled()
+        process = self._process
+        if process is None or process.stdin is None:
+            raise RuntimeError('FfmpegMerger.append called before start')
+        try:
+            process.stdin.write(data)
+        except BrokenPipeError as exc:
+            returncode = process.wait()
+            if returncode:
+                raise subprocess.CalledProcessError(returncode, self._command) from exc
+            raise
         if self._pbar is not None:
             self._pbar.update(1)
         self._progress_current += 1
         if self._progress_callback is not None and self._progress_total:
-            self._progress_callback('merging', self._progress_current, self._progress_total)
+            self._progress_callback('converting', self._progress_current, self._progress_total)
 
     def set_media_duration_ms(self, duration_ms: int | None) -> None:
-        self._media_duration_ms = duration_ms if duration_ms and duration_ms > 0 else None
-
-    def _report_packaging_progress(self, current_us: int = 0) -> None:
-        if self._progress_callback is None:
-            return
-        total_us = self._media_duration_ms * 1000 if self._media_duration_ms is not None else None
-        self._progress_callback('packaging', current_us, total_us)
-
-    def _run_ffmpeg(self, command: list[str]) -> None:
-        self._report_packaging_progress()
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-        )
-        self._process = process
-        try:
-            assert process.stdout is not None
-            for line in process.stdout:
-                self._raise_if_cancelled()
-                out_time_us = parse_ffmpeg_progress_line(line)
-                if out_time_us is not None:
-                    self._report_packaging_progress(out_time_us)
-            self._raise_if_cancelled()
-            returncode = process.wait()
-            if returncode:
-                raise subprocess.CalledProcessError(returncode, command)
-            if self._media_duration_ms is not None:
-                self._report_packaging_progress(self._media_duration_ms * 1000)
-        except ConversionCancelled:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-            self._remove_incomplete_output()
-            raise
-        finally:
-            self._process = None
+        """保留接口兼容；流式单阶段进度按分片计数，不再使用时长。"""
+        return
 
     def finish(self):
         if self._pbar is not None:
             self._pbar.close()
             self._pbar = None
 
-        if self.merged_ts_file is not None:
-            self.merged_ts_file.close()
-            self.merged_ts_file = None
+        process = self._process
+        if process is None:
+            return
+
+        command = self._command
+        try:
             if self._cancel_event is not None and self._cancel_event.is_set():
-                self._cleanup_temp()
+                self._terminate_process()
                 self._remove_incomplete_output()
                 raise ConversionCancelled()
-            if self._can_report_progress():
-                tqdm.write('converting to mp4...')
+
+            self._close_stdin()
             try:
-                stream = (
-                    ffmpeg.input(str(self.merged_ts_path))
-                    .output(str(self.target_file_path), c='copy')
-                    .global_args('-progress', 'pipe:1', '-nostats')
-                    .overwrite_output()
-                )
-                command = stream.compile(cmd=ensure_ffmpeg())
-                self._run_ffmpeg(command)
-                if self._can_report_progress():
-                    tqdm.write(f'merge success, output = {self.target_file_path}')
-            finally:
-                self._cleanup_temp()
-        elif self.tmp_dir is not None:
-            self._cleanup_temp()
+                self._wait_for_ffmpeg(command)
+            except ConversionCancelled:
+                self._terminate_process()
+                self._remove_incomplete_output()
+                raise
+            if self._can_report_progress():
+                tqdm.write(f'merge success, output = {self.target_file_path}')
+        except ConversionCancelled:
+            raise
+        except Exception:
+            self._terminate_process()
+            self._remove_incomplete_output()
+            raise
+        finally:
+            self._process = None
