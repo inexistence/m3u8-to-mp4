@@ -169,6 +169,26 @@ m3u8-to-mp4/
 | PyYAML | 读取配置文件 |
 | tqdm / colorama 等 | 辅助工具库 |
 
+## 发布（GitHub Release）
+
+推送版本 tag 后，GitHub Actions 会自动构建 Windows 发行包并创建 Release：
+
+```shell
+# 1. 在 CHANGELOG.md 写好对应版本说明（## [1.0.0]）
+# 2. 打 tag 并推送
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+```
+
+也可在 GitHub → Actions → **Release** → **Run workflow** 手动输入版本号发布。
+
+产物：
+
+- `m3u8-to-mp4-vX.Y.Z-windows-x64.zip`
+- 同名 `.sha256` 校验文件
+
+含 `-alpha` / `-beta` / `-rc` 的 tag 会标记为 Pre-release。
+
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE)。
