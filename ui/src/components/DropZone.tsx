@@ -3,11 +3,12 @@ import { isTauri } from '../api/startup'
 import { pickDirectory, pickM3u8Files } from '../native/paths'
 
 interface DropZoneProps {
-  disabled: boolean
+  /** Only for transient busy state (e.g. scanning); not tied to conversion. */
+  disabled?: boolean
   onAdd: (paths: string[]) => Promise<void>
 }
 
-export function DropZone({ disabled, onAdd }: DropZoneProps) {
+export function DropZone({ disabled = false, onAdd }: DropZoneProps) {
   const [value, setValue] = useState('')
   const [isAdding, setIsAdding] = useState(false)
   const tauri = isTauri()

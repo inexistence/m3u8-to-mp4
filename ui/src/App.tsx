@@ -1,5 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { api, createApi, type ApiClient } from './api/client'
 import { isTauri, resolveSidecarBase, waitForHealth } from './api/startup'
 import { ws } from './api/ws'
@@ -239,8 +240,6 @@ function MainQueue({ client }: { client: ApiClient }) {
 
   const addPathsRef = useRef(addPaths)
   addPathsRef.current = addPaths
-  const isConvertingRef = useRef(state.isConverting)
-  isConvertingRef.current = state.isConverting
 
   useEffect(() => {
     if (!isTauri()) return
@@ -250,14 +249,16 @@ function MainQueue({ client }: { client: ApiClient }) {
 
     void getCurrentWindow()
       .onDragDropEvent((event) => {
-        if (event.payload.type !== 'drop' || isConvertingRef.current) return
+        if (event.payload.type !== 'drop') return
         void addPathsRef.current(event.payload.paths)
       })
       .then((fn) => {
         if (active) unlisten = fn
         else fn()
       })
-      .catch(() => undefined)
+      .catch((error) => {
+        console.error('Failed to register window drag-drop handler', error)
+      })
 
     return () => {
       active = false
@@ -322,7 +323,11 @@ function MainQueue({ client }: { client: ApiClient }) {
   const changeOutputDirectory = async (outputDirectory: string | null) => {
     const previousConfig = state.config
     const config = { ...state.config, output_directory: outputDirectory }
-    dispatch({ type: 'HYDRATE_CONFIG', config })
+    // Commit optimistic update before await so a failed save always changes
+    // `output_directory` again on rollback (React 18 may otherwise batch both).
+    flushSync(() => {
+      dispatch({ type: 'HYDRATE_CONFIG', config })
+    })
     try {
       const saved = await client.putConfig(config)
       dispatch({ type: 'HYDRATE_CONFIG', config: saved })
@@ -344,9 +349,11 @@ function MainQueue({ client }: { client: ApiClient }) {
       <TopBar
         ffmpegAvailable={ffmpegAvailable}
         ffmpegMessage={ffmpegMessage}
+        settingsDisabled={state.isConverting}
         sidecarReady={sidecarReady}
         onOpenSettings={() => setSettingsOpen(true)}
       />
+
       <OutputBar
         disabled={state.isConverting}
         outputDirectory={state.config.output_directory as string | null | undefined}
@@ -366,7 +373,7 @@ function MainQueue({ client }: { client: ApiClient }) {
         onSelectAll={() => dispatch({ type: 'SELECT_ALL' })}
         onStart={() => void startConversion()}
       />
-      <DropZone disabled={state.isConverting} onAdd={addPaths} />
+      <DropZone onAdd={addPaths} />
       <TaskList
         activeBatchIds={state.activeBatchIds}
         cancellingAll={cancellingAll}
@@ -382,6 +389,7 @@ function MainQueue({ client }: { client: ApiClient }) {
           dispatch({ type: 'TOGGLE_ERROR_EXPANDED', taskId })
         }
       />
+
       {settingsOpen && (
         <SettingsModal
           config={state.config}

@@ -49,12 +49,14 @@ export function TaskList({
                 (task.status === 'pending' || task.status === 'running')
               }
               disabled={isConverting}
+              streamDisabled={isConverting && activeBatchIds.includes(task.id)}
               task={task}
               onCancel={() => onCancel(task.id)}
               onStreamChange={(index) => onStreamChange(task.id, index)}
               onToggle={() => onToggle(task.id)}
               onToggleError={() => onToggleError(task.id)}
             />
+
           </motion.div>
         ))}
       </AnimatePresence>

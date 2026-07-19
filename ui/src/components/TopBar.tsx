@@ -2,6 +2,7 @@ interface TopBarProps {
   sidecarReady: boolean
   ffmpegAvailable: boolean
   ffmpegMessage: string
+  settingsDisabled?: boolean
   onOpenSettings: () => void
 }
 
@@ -9,6 +10,7 @@ export function TopBar({
   sidecarReady,
   ffmpegAvailable,
   ffmpegMessage,
+  settingsDisabled = false,
   onOpenSettings,
 }: TopBarProps) {
   return (
@@ -27,7 +29,12 @@ export function TopBar({
         >
           {ffmpegAvailable ? 'FFmpeg 可用' : 'FFmpeg 不可用'}
         </span>
-        <button className="button button--secondary" type="button" onClick={onOpenSettings}>
+        <button
+          className="button button--secondary"
+          disabled={settingsDisabled}
+          type="button"
+          onClick={onOpenSettings}
+        >
           设置
         </button>
       </div>

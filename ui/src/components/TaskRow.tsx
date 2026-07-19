@@ -3,6 +3,8 @@ import type { QueueTask } from '../types'
 interface TaskRowProps {
   task: QueueTask
   disabled: boolean
+  /** When set, overrides `disabled` for the stream selector only. */
+  streamDisabled?: boolean
   cancellable: boolean
   cancelling: boolean
   onToggle: () => void
@@ -22,6 +24,7 @@ const statusText: Record<QueueTask['status'], string> = {
 export function TaskRow({
   task,
   disabled,
+  streamDisabled,
   cancellable,
   cancelling,
   onToggle,
@@ -30,6 +33,7 @@ export function TaskRow({
   onToggleError,
 }: TaskRowProps) {
   const hasError = task.status === 'error' && Boolean(task.errorMessage)
+  const streamSelectDisabled = streamDisabled ?? disabled
 
   return (
     <article className={`task-row task-row--${task.status}`}>
@@ -100,7 +104,7 @@ export function TaskRow({
         {task.isMasterPlaylist && task.streamLabels.length > 0 && (
           <select
             aria-label={`${task.name} 码流`}
-            disabled={disabled}
+            disabled={streamSelectDisabled}
             value={task.selectedStreamIndex}
             onChange={(event) => onStreamChange(Number(event.target.value))}
           >

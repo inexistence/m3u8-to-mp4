@@ -378,6 +378,42 @@ describe('App sidecar wiring', () => {
     })
   })
 
+  it('keeps import enabled and locks settings while converting', async () => {
+    vi.spyOn(api, 'scan').mockResolvedValue({
+      entries: [
+        {
+          task_id: 'task-1',
+          path: 'C:\\videos\\one.m3u8',
+          is_master_playlist: false,
+          stream_labels: [],
+          selected_stream_index: 0,
+        },
+      ],
+      added: 1,
+      duplicates: 0,
+      unparseable: 0,
+      message: '已添加 1 个任务',
+    })
+    vi.spyOn(api, 'convert').mockResolvedValue({ ok: true })
+
+    await renderReadyApp()
+    fireEvent.change(screen.getByLabelText('路径列表'), {
+      target: { value: 'C:\\videos\\one.m3u8' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '添加到队列' }))
+    expect(await screen.findByText('one.m3u8')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '开始转换' }))
+
+    await screen.findByRole('button', { name: '取消全部' })
+
+    const pathInput = screen.getByLabelText('路径列表') as HTMLTextAreaElement
+    const settingsButton = screen.getByRole('button', { name: '设置' }) as HTMLButtonElement
+    const clearButton = screen.getByRole('button', { name: '清空列表' }) as HTMLButtonElement
+    expect(pathInput.disabled).toBe(false)
+    expect(settingsButton.disabled).toBe(true)
+    expect(clearButton.disabled).toBe(true)
+  })
+
   it('keeps custom output mode active until a path is entered', async () => {
     const putConfig = vi.spyOn(api, 'putConfig').mockImplementation(async (config) => config)
 
