@@ -88,6 +88,30 @@ npm run tauri dev
 
 在设置中可调整同时转换数、输出文件名、AES-128 分片 IV 模式及分段处理选项。设置会保存到 `local_config.yaml`，并在下一次转换时生效。
 
+### 开发 / 发行 / 验收
+
+| 场景 | 命令 |
+|------|------|
+| 本地开发（Tauri + Python sidecar） | `.\scripts\dev.ps1` 或 `npm run dev` |
+| 发行打包（sidecar → externalBin → 安装包） | `.\scripts\build.ps1` 或 `.\build.bat` |
+| Python 单测 | `python -m unittest discover -s tests -v` |
+| 前端单测 | `npm --prefix ui test` |
+| CLI | `python .\main.py "path\to\index.m3u8"` |
+
+`scripts\dev.ps1` / `scripts\build.ps1` 会将 `%USERPROFILE%\.cargo\bin` 加入 `PATH`，便于找到 `cargo` / `rustc`。
+
+发行验收要点（打包产物或 `tauri dev` 手工确认）：
+
+1. 无系统 Python 时，双击/运行 Tauri 主程序仍能出窗口（sidecar 由壳拉起）
+2. Sidecar 自动启动，健康检查通过（界面显示「Sidecar 已连接」）
+3. 拖放 `.m3u8` / 选文件夹导入
+4. 设置并行数并持久化到 `local_config.yaml`
+5. 开始转换后进度平滑更新，无整表闪烁
+6. 行内取消与取消全部可用
+7. 失败任务可展开并复制错误信息
+8. FFmpeg 不可用时顶栏有明确提示（「FFmpeg 不可用」+ 详情）
+9. 开发环境 `python main.py` CLI 仍可用
+
 ### 命令行
 
 将 `index.m3u8` 文件路径，或包含该文件的文件夹路径作为参数传入。默认输出 MP4 到对应 `index.m3u8` 所在目录；配置 `output_directory` 后则输出到指定目录。
