@@ -97,7 +97,8 @@ def create_app(session: SidecarSession | None = None) -> FastAPI:
                     message = await asyncio.wait_for(websocket.receive(), timeout=0.05)
                     if message['type'] == 'websocket.disconnect':
                         break
-                except TimeoutError:
+                except asyncio.TimeoutError:
+                    # Py3.10: asyncio.TimeoutError is not builtin TimeoutError
                     pass
                 try:
                     event = events.get_nowait()
