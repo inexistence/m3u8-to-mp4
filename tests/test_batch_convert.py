@@ -10,7 +10,7 @@ from core.batch_convert import BatchCancelController, run_batch_conversions
 from core.discovery import M3u8Entry
 from core.utils.cancellation import ConversionCancelled
 from core.utils.config import GlobalConfig
-from gui.models import ConversionTask, TaskStatus
+from core.models import ConversionTask, TaskStatus
 
 
 def _task(name: str) -> ConversionTask:

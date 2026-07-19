@@ -12,7 +12,7 @@ from core.models import ConversionTask, TaskStatus
 from core.queue_messages import scan_feedback
 from core.utils.config import GlobalConfig, get_global_config, save_local_config
 from core.utils.ffmpeg_check import describe_ffmpeg_status
-from gui.worker import map_task_progress
+from core.progress import map_task_progress
 from sidecar.events import EventBus
 from sidecar.schemas import ConvertTaskIn, EntryOut, ScanResult
 

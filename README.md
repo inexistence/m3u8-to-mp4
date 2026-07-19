@@ -8,14 +8,15 @@
 - 支持 `AES-128` 加密分片解密（需本地存在 key 文件）
 - 自动解析主播放列表（`#EXT-X-STREAM-INF`），支持按带宽自动选流或交互式选择
 - 支持单文件或递归扫描目录下所有 `.m3u8` 文件
-- 提供 Windows GUI：拖放导入、批量队列、并行转换（默认 2 路）、输出目录选择及任务行内进度/失败详情
+- 提供 Windows 桌面应用（Tauri + React）：批量队列、并行转换（默认 2 路）、输出目录选择及任务进度/失败详情
 - 通过 `config.yaml` 配置输出文件名、输出目录、分段跳过等行为
 
 ## 环境要求
 
-- Python 3.10+
-- [FFmpeg](https://ffmpeg.org/download.html)：通过 `imageio-ffmpeg` 自动提供（源码运行与发行版 exe 均适用）；也可自行安装并加入系统 `PATH`
-- 发行版 `m3u8-to-mp4.exe` 会打包 `imageio-ffmpeg` 及其自带 FFmpeg，无需用户额外下载
+- Python 3.10+（CLI 与 sidecar）
+- Node.js 18+ 与 Rust（开发/打包桌面应用）
+- [FFmpeg](https://ffmpeg.org/download.html)：通过 `imageio-ffmpeg` 自动提供（源码运行与发行版均适用）；也可自行安装并加入系统 `PATH`
+- 发行版会打包 sidecar 与 `imageio-ffmpeg` 自带的 FFmpeg，无需用户额外下载
 
 ## 安装
 
@@ -38,40 +39,54 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ```shell
-# 安装依赖
+# 安装 Python 依赖
 pip install -r requirements.txt
+
+# 安装前端与 Tauri 依赖
+npm install
+npm --prefix ui install
 ```
 
 ## 使用方法
 
 ### 桌面应用（Windows）
 
-安装依赖后，可直接启动 GUI：
+开发模式（热重载 UI，由 Tauri 拉起 Python sidecar）：
 
 ```shell
-python gui_app.py
+.\scripts\dev.ps1
 ```
 
-或打包为独立 exe（双击运行，无需 Python 环境）：
+或：
+
+```shell
+npm run tauri dev
+```
+
+发行打包：
+
+```shell
+.\scripts\build.ps1
+```
+
+或：
 
 ```shell
 .\build.bat
 ```
 
-打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。构建会通过 `imageio-ffmpeg` 收集并打入平台 FFmpeg，最终用户无需自行下载。将 exe 放到任意目录即可使用；如需覆盖默认配置，可在 exe 同目录放置 `local_config.yaml`。
+打包会先用 PyInstaller 构建 `m3u8-sidecar`，再由 Tauri 打出安装包/可执行文件。构建通过 `imageio-ffmpeg` 收集并打入平台 FFmpeg。如需覆盖默认配置，可在应用数据目录或约定位置放置 `local_config.yaml`。
 
-#### GUI 使用
+#### 桌面应用使用
 
-主窗口以单个转换队列为核心：输出目录栏、批量操作栏、持续导入入口和任务列表始终处于同一工作区。
+1. 导入 `.m3u8` 文件或文件夹；程序会扫描入口索引并加入转换队列。
+2. 选择输出到「源目录」或「指定目录」。源目录模式下，每个任务输出到各自 m3u8 所在目录。
+3. 勾选要转换的任务；主播放列表可选择码率。
+4. 开始转换后，按设置中的并发数（默认 2，可选 1–8）并行执行。
+5. 任务显示合片与 FFmpeg 封装阶段进度；失败任务可查看错误详情。
+6. 转换进行中可取消全部，或取消单个排队/运行中的任务。
 
-1. 在持续导入栏拖放 `.m3u8` 文件/文件夹，或选择文件、文件夹。程序会扫描入口索引、跳过重复项，并在工具栏内显示导入结果。
-2. 在“输出到”栏选择“源目录”或“指定目录”。切换至指定目录时选择目标文件夹；目录名称可点击打开。源目录模式下，每个任务输出到各自 m3u8 所在目录。
-3. 勾选要转换的任务。主播放列表会显示可选码率下拉框；单流任务显示“码率：单流”。
-4. 点击“开始转换”。已选任务会冻结为当前批次，按设置中的并发数（默认 2，可选 1–8）并行执行；运行时可继续导入任务，但新增任务仅在下一批执行。
-5. 任务行显示当前阶段的真实进度：合片阶段与 FFmpeg 封装阶段依次进行。失败任务可展开查看和复制错误详情。
-6. 转换进行中，可用工具栏「取消全部」中断整批，或在排队/运行中的任务行点击「取消」仅停止该任务。
-
-点击右上角“设置”可调整同时转换数、输出文件名、AES-128 分片 IV 模式及分段处理选项。设置会保存到 `local_config.yaml`，并在下一次转换时生效；转换进行中无法打开设置。输出目录在队列顶部设置，同样会写入 `local_config.yaml`。
+在设置中可调整同时转换数、输出文件名、AES-128 分片 IV 模式及分段处理选项。设置会保存到 `local_config.yaml`，并在下一次转换时生效。
 
 ### 命令行
 
@@ -120,7 +135,7 @@ reset_decryption_if_part_changed: true
 aes_iv_mode: auto
 
 # 主播放列表（多码率）流选择策略，仅命令行使用
-# GUI 中请在每个任务行选择码率
+# 桌面应用中请在每个任务行选择码率
 # - highest_bandwidth: 选带宽最高的（默认）
 # - lowest_bandwidth: 选带宽最低的
 # - first: 选第一个
@@ -129,7 +144,7 @@ aes_iv_mode: auto
 # - index:0: 按序号选择（从 0 开始）
 stream_selection: highest_bandwidth
 
-# 同时转换的最大任务数（GUI / CLI 批量）
+# 同时转换的最大任务数（桌面应用 / CLI 批量）
 # 取值 1–8；默认 2
 max_parallel_conversions: 2
 ```
@@ -141,19 +156,13 @@ max_parallel_conversions: 2
 ```
 m3u8-to-mp4/
 ├── main.py                 # 命令行入口
-├── gui_app.py              # 桌面应用入口
-├── build.bat               # Windows 一键打包脚本
-├── build.spec              # PyInstaller 配置
+├── build.bat               # Windows 一键发行打包（调用 scripts/build.ps1）
 ├── config.yaml             # 默认配置
-├── core/
-│   ├── discovery.py        # m3u8 扫描与码率信息
-│   ├── m3u8converter.py    # 转换流程编排
-│   ├── m3u8_stream.py      # 主播放列表解析、流选择与过滤
-│   ├── m3u8_ts_parser.py   # 媒体播放列表解析、分片解密与合并
-│   ├── decrypt/            # ts 分片解密（AES-128）
-│   ├── merge/              # ts 合并（流式写入 + FFmpeg 封装）
-│   └── utils/              # 配置、文件读写等工具
-├── gui/                    # 桌面应用界面
+├── core/                   # 转换核心与批处理
+├── sidecar/                # FastAPI sidecar（桌面应用后端）
+├── ui/                     # React 前端
+├── src-tauri/              # Tauri 壳
+├── scripts/                # 开发与打包脚本
 └── requirements.txt
 ```
 
@@ -161,13 +170,14 @@ m3u8-to-mp4/
 
 | 库 | 用途 |
 |---|---|
-| customtkinter | 桌面应用界面 |
-| tkinterdnd2 | 拖放文件/文件夹 |
+| fastapi / uvicorn | Python sidecar HTTP / WebSocket |
 | ffmpeg-python | 调用 FFmpeg 合并 ts 分片 |
 | imageio-ffmpeg | 解析并提供 FFmpeg 可执行文件（含打包进发行版的平台二进制） |
 | pycryptodome | AES-128 分片解密 |
 | PyYAML | 读取配置文件 |
 | tqdm / colorama 等 | 辅助工具库 |
+
+桌面 UI 依赖见 `ui/package.json`；壳层见 `src-tauri/`。
 
 ## 许可证
 
