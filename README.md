@@ -58,7 +58,7 @@ python gui_app.py
 .\build.bat
 ```
 
-打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。构建会通过 `imageio-ffmpeg` 收集并打入平台 FFmpeg，最终用户无需自行下载。将 exe 放到任意目录即可使用；如需覆盖默认配置，可在 exe 同目录放置 `local_config.yaml`。
+打包完成后，可执行文件位于 `dist\m3u8-to-mp4.exe`。构建会通过 `imageio-ffmpeg` 收集并打入平台 FFmpeg，最终用户无需自行下载。将 exe 放到任意目录即可使用；GUI 修改的设置会保存到 `%APPDATA%\m3u8-to-mp4\config.yaml`。
 
 #### GUI 使用
 
@@ -71,7 +71,7 @@ python gui_app.py
 5. 任务行按分片进度显示转换百分比。失败任务可展开查看和复制错误详情。
 6. 转换进行中，可用工具栏「取消全部」中断整批，或在排队/运行中的任务行点击「取消」仅停止该任务。
 
-点击右上角“设置”可调整同时转换数、输出文件名、AES-128 分片 IV 模式及分段处理选项。设置会保存到 `local_config.yaml`，并在下一次转换时生效；转换进行中无法打开设置。输出目录在队列顶部设置，同样会写入 `local_config.yaml`。
+点击右上角“设置”可调整同时转换数、输出文件名、AES-128 分片 IV 模式及分段处理选项。设置会保存到 `%APPDATA%\m3u8-to-mp4\config.yaml`，并在下一次转换时生效；转换进行中无法打开设置。输出目录在队列顶部设置，同样写入该文件。
 
 ### 命令行
 
@@ -134,7 +134,7 @@ stream_selection: highest_bandwidth
 max_parallel_conversions: 2
 ```
 
-如需本地覆盖配置且不希望提交到版本库，可在项目根目录创建 `local_config.yaml`，字段与 `config.yaml` 相同，同名项优先生效。指定的输出目录必须已存在；输出文件重名时程序会自动追加 m3u8 名称或序号以避免覆盖。
+用户覆盖配置保存在 `%APPDATA%\m3u8-to-mp4\config.yaml`（字段与默认 `config.yaml` 相同，同名项优先生效）。若该文件尚不存在，仍会读取旧版程序目录旁的 `local_config.yaml`；之后一旦在 GUI 中保存设置，将写入 AppData。指定的输出目录必须已存在；输出文件重名时程序会自动追加 m3u8 名称或序号以避免覆盖。
 
 ## 项目结构
 

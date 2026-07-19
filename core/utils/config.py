@@ -8,6 +8,8 @@ import yaml
 import core.utils.file as file
 from core.utils.value import get_value
 
+APP_NAME = 'm3u8-to-mp4'
+
 
 def _app_root() -> Path:
     if getattr(sys, 'frozen', False):
@@ -21,8 +23,29 @@ def _bundled_config_path() -> Path:
     return _app_root() / 'config.yaml'
 
 
+def user_config_dir() -> Path:
+    """用户可写配置目录：Windows 为 %APPDATA%\\m3u8-to-mp4。"""
+    if sys.platform == 'win32':
+        base = os.environ.get('APPDATA')
+        if base:
+            return Path(base) / APP_NAME
+    xdg = os.environ.get('XDG_CONFIG_HOME')
+    if xdg:
+        return Path(xdg) / APP_NAME
+    return Path.home() / '.config' / APP_NAME
+
+
+def user_config_path() -> Path:
+    """用户覆盖配置文件路径。"""
+    return user_config_dir() / 'config.yaml'
+
+
+def legacy_local_config_path() -> Path:
+    """旧版程序目录旁的 local_config.yaml，仅用于读取迁移。"""
+    return _app_root() / 'local_config.yaml'
+
+
 CONFIG_FILE = _bundled_config_path()
-LOCAL_CONFIG_FILE = _app_root() / 'local_config.yaml'
 
 
 def normalize_max_parallel_conversions(value: object) -> int:
@@ -39,7 +62,7 @@ def normalize_max_parallel_conversions(value: object) -> int:
 
 
 class GlobalConfig:
-    """从 config.yaml / local_config.yaml 加载的运行时配置。"""
+    """从默认 config.yaml 与用户配置加载的运行时配置。"""
     def __init__(self, config: dict):
         self.skip_first_part: bool = get_value(dict=config, key='skip_first_part', default_value=False)
         self.output_file_name: str = get_value(dict=config, key='output_file_name', default_value='output.mp4')
@@ -85,7 +108,7 @@ class GlobalConfig:
             self.max_parallel_conversions = normalize_max_parallel_conversions(data['max_parallel_conversions'])
 
     def reload_from_disk(self) -> None:
-        """从 config.yaml / local_config.yaml 重新加载，覆盖当前内存值。"""
+        """从默认配置与用户配置重新加载，覆盖当前内存值。"""
         fresh = get_global_config()
         self.skip_first_part = fresh.skip_first_part
         self.output_file_name = fresh.output_file_name
@@ -95,17 +118,31 @@ class GlobalConfig:
         self.stream_selection = fresh.stream_selection
         self.max_parallel_conversions = fresh.max_parallel_conversions
 
+
 def _load_yaml(path: Path) -> dict:
     content = file.read(path)
     data = yaml.safe_load(content)
     return data if isinstance(data, dict) else {}
 
+
+def _resolve_user_override_path() -> Path | None:
+    """优先 AppData；若不存在则回退到旧版程序目录 local_config.yaml。"""
+    user_path = user_config_path()
+    if user_path.is_file():
+        return user_path
+    legacy_path = legacy_local_config_path()
+    if legacy_path.is_file():
+        return legacy_path
+    return None
+
+
 def get_global_config() -> GlobalConfig:
-    """加载 config.yaml，并用 local_config.yaml 中的同名字段覆盖。"""
+    """加载默认 config.yaml，并用用户配置中的同名字段覆盖。"""
     config = _load_yaml(CONFIG_FILE)
 
-    if os.path.exists(LOCAL_CONFIG_FILE):
-        local_config = _load_yaml(LOCAL_CONFIG_FILE)
+    override_path = _resolve_user_override_path()
+    if override_path is not None:
+        local_config = _load_yaml(override_path)
         if local_config:
             config.update(local_config)
 
@@ -113,13 +150,14 @@ def get_global_config() -> GlobalConfig:
 
 
 def save_local_config(global_config: GlobalConfig) -> None:
-    """将 GUI 修改的配置写入 local_config.yaml。"""
-    LOCAL_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    """将 GUI 修改的配置写入 %APPDATA%\\m3u8-to-mp4\\config.yaml。"""
+    path = user_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     content = yaml.safe_dump(
         global_config.to_local_dict(),
         allow_unicode=True,
         default_flow_style=False,
         sort_keys=False,
     )
-    with open(LOCAL_CONFIG_FILE, 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         f.write(content)
