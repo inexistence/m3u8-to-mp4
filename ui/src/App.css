@@ -93,7 +93,7 @@
 
 .output-bar {
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;

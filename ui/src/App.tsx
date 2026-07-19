@@ -1,6 +1,7 @@
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { api, createApi, type ApiClient } from './api/client'
-import { resolveSidecarBase, waitForHealth } from './api/startup'
+import { isTauri, resolveSidecarBase, waitForHealth } from './api/startup'
 import { ws } from './api/ws'
 import { DropZone } from './components/DropZone'
 import { OutputBar } from './components/OutputBar'
@@ -235,6 +236,34 @@ function MainQueue({ client }: { client: ApiClient }) {
       dispatch({ type: 'SET_FEEDBACK', feedback: `扫描失败：${String(error)}` })
     }
   }
+
+  const addPathsRef = useRef(addPaths)
+  addPathsRef.current = addPaths
+  const isConvertingRef = useRef(state.isConverting)
+  isConvertingRef.current = state.isConverting
+
+  useEffect(() => {
+    if (!isTauri()) return
+
+    let active = true
+    let unlisten: (() => void) | undefined
+
+    void getCurrentWindow()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== 'drop' || isConvertingRef.current) return
+        void addPathsRef.current(event.payload.paths)
+      })
+      .then((fn) => {
+        if (active) unlisten = fn
+        else fn()
+      })
+      .catch(() => undefined)
+
+    return () => {
+      active = false
+      unlisten?.()
+    }
+  }, [])
 
   const startConversion = async () => {
     const activeTasks = selectedTasks

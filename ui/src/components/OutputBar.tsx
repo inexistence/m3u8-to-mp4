@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { isTauri } from '../api/startup'
+import { pickDirectory } from '../native/paths'
 
 interface OutputBarProps {
   outputDirectory?: string | null
@@ -17,10 +19,18 @@ export function OutputBar({
 }: OutputBarProps) {
   const custom = outputMode === 'custom'
   const [draft, setDraft] = useState(outputDirectory ?? '')
+  const tauri = isTauri()
 
   useEffect(() => {
     setDraft(outputDirectory ?? '')
   }, [outputDirectory])
+
+  const browseDirectory = async () => {
+    const selected = await pickDirectory()
+    if (!selected) return
+    setDraft(selected)
+    onDirectoryChange(selected)
+  }
 
   return (
     <section className="output-bar" aria-label="输出设置">
@@ -53,6 +63,16 @@ export function OutputBar({
         }}
         onChange={(event) => setDraft(event.target.value)}
       />
+      {tauri && (
+        <button
+          className="button button--secondary"
+          disabled={disabled || !custom}
+          type="button"
+          onClick={() => void browseDirectory()}
+        >
+          浏览…
+        </button>
+      )}
     </section>
   )
 }

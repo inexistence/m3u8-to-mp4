@@ -257,11 +257,10 @@ describe('App sidecar wiring', () => {
   it('uses absolute path paste without misleading browser picker buttons', async () => {
     await renderReadyApp()
 
-    expect(
-      screen.getByText('桌面版将支持拖放与原生选文件；当前请粘贴绝对路径'),
-    ).toBeTruthy()
+    expect(screen.getByText('当前为浏览器模式，请粘贴绝对路径')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '选择文件' })).toBeNull()
     expect(screen.queryByRole('button', { name: '选择文件夹' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '浏览…' })).toBeNull()
   })
 
   it('reconnects after a close and merges the batch snapshot', async () => {

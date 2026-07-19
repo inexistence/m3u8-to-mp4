@@ -61,6 +61,8 @@ fn get_sidecar_base() -> &'static str {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app = tauri::Builder::default()
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_dialog::init())
     .manage(SidecarState(Mutex::new(None)))
     .invoke_handler(tauri::generate_handler![get_sidecar_base])
     .setup(|app| {

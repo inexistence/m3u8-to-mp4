@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { isTauri } from '../api/startup'
+import { pickDirectory, pickM3u8Files } from '../native/paths'
 
 interface DropZoneProps {
   disabled: boolean
@@ -8,6 +10,7 @@ interface DropZoneProps {
 export function DropZone({ disabled, onAdd }: DropZoneProps) {
   const [value, setValue] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+  const tauri = isTauri()
 
   const submit = async (paths: string[]) => {
     const cleanPaths = paths.map((path) => path.trim()).filter(Boolean)
@@ -21,11 +24,35 @@ export function DropZone({ disabled, onAdd }: DropZoneProps) {
     }
   }
 
+  const pickFiles = async () => {
+    setIsAdding(true)
+    try {
+      const paths = await pickM3u8Files()
+      if (paths.length > 0) await onAdd(paths)
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
+  const pickFolder = async () => {
+    setIsAdding(true)
+    try {
+      const directory = await pickDirectory()
+      if (directory) await onAdd([directory])
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
   return (
     <section className="drop-zone">
       <div className="drop-zone__copy">
         <strong>添加 m3u8 文件或目录</strong>
-        <span>桌面版将支持拖放与原生选文件；当前请粘贴绝对路径</span>
+        <span>
+          {tauri
+            ? '可拖放路径、选择文件/文件夹，或粘贴绝对路径'
+            : '当前为浏览器模式，请粘贴绝对路径'}
+        </span>
       </div>
       <textarea
         aria-label="路径列表"
@@ -36,6 +63,26 @@ export function DropZone({ disabled, onAdd }: DropZoneProps) {
         onChange={(event) => setValue(event.target.value)}
       />
       <div className="drop-zone__actions">
+        {tauri && (
+          <>
+            <button
+              className="button button--secondary"
+              disabled={disabled || isAdding}
+              type="button"
+              onClick={() => void pickFiles()}
+            >
+              选择文件
+            </button>
+            <button
+              className="button button--secondary"
+              disabled={disabled || isAdding}
+              type="button"
+              onClick={() => void pickFolder()}
+            >
+              选择文件夹
+            </button>
+          </>
+        )}
         <button
           className="button button--primary"
           disabled={disabled || isAdding || !value.trim()}
