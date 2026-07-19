@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 1.0.0 or v1.0.0)"
+        required: true
+        type: string
+      notes:
+        description: "Optional release notes override"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            export RAW_VERSION="${{ inputs.version }}"
+          else
+            export RAW_VERSION="${GITHUB_REF_NAME}"
+          fi
+          VERSION="$(python -c "import os; from scripts.release_notes import normalize_version; print(normalize_version(os.environ['RAW_VERSION']))")"
+          PRERELEASE="$(python scripts/release_notes.py --version "$VERSION" --check-prerelease)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Resolved version=$VERSION prerelease=$PRERELEASE"
+
+      - name: Ensure tag exists (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists"
+          else
+            git tag -a "$VERSION" -m "$VERSION"
+            git push origin "refs/tags/$VERSION"
+          fi
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pytest
+
+      - name: Run unit tests (release helper)
+        shell: bash
+        run: python -m pytest tests/test_release_notes.py -v
+
+      - name: Build exe
+        shell: bash
+        run: python -m PyInstaller --clean build.spec
+
+      - name: Package zip and SHA256
+        id: pkg
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "dist/m3u8-to-mp4.exe"
+          if (-not (Test-Path $exe)) { throw "Missing $exe" }
+          $name = "m3u8-to-mp4-$env:VERSION-windows-x64"
+          $zip = "dist/$name.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $exe -DestinationPath $zip
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+          $shaFile = "$zip.sha256"
+          Set-Content -Path $shaFile -Value "$hash  $name.zip" -NoNewline
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$shaFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Packaged $zip"
+          Get-Content $shaFile
+
+      - name: Collect commit list fallback
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$VERSION^" 2>/dev/null || true)"
+          if [ -n "${PREV:-}" ]; then
+            git log --pretty=format:"- %s" "${PREV}..${VERSION}" > commits.txt
+          else
+            git log --pretty=format:"- %s" -n 50 > commits.txt
+          fi
+
+      - name: Build release notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          OVERRIDE: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${OVERRIDE:-}" ]; then
+            EXTRA+=(--override "$OVERRIDE")
+          fi
+          python scripts/release_notes.py --version "$VERSION" --changelog CHANGELOG.md --commits-file commits.txt "${EXTRA[@]}" > release_notes.md
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          PRERELEASE: ${{ steps.ver.outputs.prerelease }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+          SHA: ${{ steps.pkg.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          ARGS=(release create "$VERSION" "$ZIP" "$SHA" --title "$VERSION" --notes-file release_notes.md)
+          if [ "$PRERELEASE" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists; uploading assets"
+            gh release upload "$VERSION" "$ZIP" "$SHA" --clobber
+          else
+            gh "${ARGS[@]}"
+          fi
