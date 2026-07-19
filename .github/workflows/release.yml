@@ -33,6 +33,9 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -130,14 +133,14 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-          OVERRIDE: ${{ inputs.notes }}
+          OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && inputs.notes || '' }}
         run: |
           set -euo pipefail
-          EXTRA=()
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${OVERRIDE:-}" ]; then
-            EXTRA+=(--override "$OVERRIDE")
+          ARGS=(--version "$VERSION" --changelog CHANGELOG.md --commits-file commits.txt)
+          if [ -n "${OVERRIDE:-}" ]; then
+            ARGS+=(--override "$OVERRIDE")
           fi
-          python scripts/release_notes.py --version "$VERSION" --changelog CHANGELOG.md --commits-file commits.txt "${EXTRA[@]}" > release_notes.md
+          python scripts/release_notes.py "${ARGS[@]}" > release_notes.md
           cat release_notes.md
 
       - name: Create GitHub Release

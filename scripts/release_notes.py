@@ -66,9 +66,7 @@ def build_notes(
     else:
         main = None
         if changelog_path is not None and changelog_path.is_file():
-            main = extract_changelog_section(
-                changelog_path.read_text(encoding="utf-8"), version
-            )
+            main = extract_changelog_section(_read_text(changelog_path), version)
         if not main:
             commits = (commits_text or "").strip()
             main = commits if commits else f"Release {normalize_version(version)}"
@@ -78,7 +76,25 @@ def build_notes(
     return f"{main.rstrip()}\n"
 
 
+def _read_text(path: Path) -> str:
+    raw = path.read_bytes()
+    for encoding in ("utf-8-sig", "utf-8", "utf-16", "gbk"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
     parser.add_argument("--changelog", type=Path, default=Path("CHANGELOG.md"))
@@ -95,11 +111,11 @@ def main(argv: list[str] | None = None) -> int:
 
     commits_text = None
     if args.commits_file is not None and args.commits_file.is_file():
-        commits_text = args.commits_file.read_text(encoding="utf-8")
+        commits_text = _read_text(args.commits_file)
 
     footer = DEFAULT_FOOTER
     if args.footer_file is not None and args.footer_file.is_file():
-        footer = args.footer_file.read_text(encoding="utf-8")
+        footer = _read_text(args.footer_file)
 
     changelog = args.changelog if args.changelog.is_file() else None
     sys.stdout.write(
