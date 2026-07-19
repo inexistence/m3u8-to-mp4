@@ -4,5 +4,6 @@ local_config.yaml
 build/
 dist/
 src-tauri/binaries/*.exe
-.worktrees/
 docs/superpowers/
+.worktrees/
+

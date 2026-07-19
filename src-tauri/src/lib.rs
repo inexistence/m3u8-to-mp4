@@ -5,6 +5,11 @@ use tauri::{Manager, RunEvent};
 
 const SIDECAR_PORT: &str = "8765";
 const SIDECAR_BASE: &str = "http://127.0.0.1:8765";
+const SIDECAR_BIN_NAME: &str = if cfg!(windows) {
+  "m3u8-sidecar.exe"
+} else {
+  "m3u8-sidecar"
+};
 
 struct SidecarState(Mutex<Option<Child>>);
 
@@ -15,12 +20,45 @@ fn repo_root() -> PathBuf {
     .to_path_buf()
 }
 
+fn resolve_release_sidecar_path(app_handle: &tauri::AppHandle) -> std::io::Result<PathBuf> {
+  if let Ok(resource_dir) = app_handle.path().resource_dir() {
+    let candidate = resource_dir.join(SIDECAR_BIN_NAME);
+    if candidate.is_file() {
+      return Ok(candidate);
+    }
+  }
+
+  let mut exe_dir = std::env::current_exe()?;
+  exe_dir.pop();
+  let candidate = exe_dir.join(SIDECAR_BIN_NAME);
+  if candidate.is_file() {
+    return Ok(candidate);
+  }
+
+  Err(std::io::Error::new(
+    std::io::ErrorKind::NotFound,
+    format!("sidecar binary not found: {SIDECAR_BIN_NAME}"),
+  ))
+}
+
 fn start_sidecar(app_handle: &tauri::AppHandle) -> std::io::Result<()> {
-  let mut command = Command::new("python");
+  let mut command = if cfg!(debug_assertions) {
+    let mut command = Command::new("python");
+    command
+      .args(["-m", "sidecar"])
+      .current_dir(repo_root());
+    command
+  } else {
+    let sidecar_path = resolve_release_sidecar_path(app_handle)?;
+    let mut command = Command::new(&sidecar_path);
+    if let Some(parent) = sidecar_path.parent() {
+      command.current_dir(parent);
+    }
+    command
+  };
+
   command
-    .args(["-m", "sidecar"])
     .env("M3U8_SIDECAR_PORT", SIDECAR_PORT)
-    .current_dir(repo_root())
     .stdin(Stdio::null())
     .stdout(Stdio::null())
     .stderr(Stdio::null());
